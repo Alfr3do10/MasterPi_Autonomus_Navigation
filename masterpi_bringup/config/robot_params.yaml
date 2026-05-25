@@ -1,0 +1,49 @@
+motor_node:
+  ros__parameters:
+    max_linear_speed: 0.30
+    max_angular_speed: 1.5
+    max_hardware_velocity: 90.0
+    max_hardware_angular_rate: 0.6
+    angular_direction_multiplier: 1.0
+    cmd_vel_timeout: 0.5
+    use_mock_hardware: false
+
+servo_node:
+  ros__parameters:
+    pan_channel: 1
+    tilt_channel: 3
+    default_pan: 1500
+    default_tilt: 500
+    move_time_ms: 500
+    use_mock_hardware: false
+
+battery_node:
+  ros__parameters:
+    publish_rate: 0.2
+    min_voltage: 6.4
+    max_voltage: 8.4
+    use_mock_hardware: false
+
+sonar_node:
+  ros__parameters:
+    publish_rate: 5.0
+    frame_id: sonar_link
+    min_range: 0.02
+    max_range: 5.0
+    field_of_view: 0.52
+    use_mock_hardware: false
+
+camera_node:
+  ros__parameters:
+    camera_index: 0
+    frame_id: camera_link
+    publish_rate: 10.0
+    use_mock_hardware: false
+    publish_grayscale: true
+
+odom_node:
+  ros__parameters:
+    publish_rate: 20.0
+    odom_frame: odom
+    base_frame: base_link
+    use_mock_hardware: true
