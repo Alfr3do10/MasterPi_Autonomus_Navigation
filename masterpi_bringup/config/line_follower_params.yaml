@@ -1,0 +1,33 @@
+line_follower_node:
+  ros__parameters:
+    image_topic: /camera/image_raw
+    cmd_vel_topic: /cmd_vel
+    debug_image_topic: /line_follower/debug_image
+    mask_topic: /line_follower/mask
+
+    detection_mode: brightness
+
+    brightness_threshold: 180
+    blur_kernel: 5
+    morph_kernel: 5
+
+    h_min: 18
+    s_min: 70
+    v_min: 70
+    h_max: 45
+    s_max: 255
+    v_max: 255
+
+    roi_1: [105.0, 130.0, 80.0, 240.0, 0.15]
+    roi_2: [145.0, 175.0, 80.0, 240.0, 0.30]
+    roi_3: [190.0, 235.0, 80.0, 240.0, 0.55]
+
+    base_speed: 0.15
+    kp_angular: 0.80
+    max_angular_speed: 1.00
+    angular_sign: -1.0
+    slowdown_on_error: 0.20
+
+    min_contour_area: 40.0
+    search_when_lost: false
+    search_angular_speed: 0.40

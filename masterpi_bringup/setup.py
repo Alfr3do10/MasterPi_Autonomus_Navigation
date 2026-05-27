@@ -44,6 +44,7 @@ setup(
             'odom_node = masterpi_bringup.odom_node:main',
             'sonar_node = masterpi_bringup.sonar_node:main',
             'aruco = masterpi_bringup.aruco:main',
+            'line_follower_node = masterpi_bringup.line_follower_node:main',
         ],
     },
 )
