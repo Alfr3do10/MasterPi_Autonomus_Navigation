@@ -1,50 +1,34 @@
 #!/usr/bin/env python3
 
-import math
-import time
-
 import cv2
 import numpy as np
 import rclpy
+from rclpy.node import Node
+
 from cv_bridge import CvBridge
 from geometry_msgs.msg import Twist
-from rclpy.node import Node
 from sensor_msgs.msg import Image
-from std_msgs.msg import Int32MultiArray
 
 
 class LineFollowerNode(Node):
-    """Camera-based yellow line follower for the Hiwonder MasterPi.
-
-    Input:
-      /camera/image_raw  sensor_msgs/Image, ideally bgr8 color
-
-    Output:
-      /cmd_vel           geometry_msgs/Twist
-      /servo_cmd         std_msgs/Int32MultiArray, optional camera pose init
-      /line_follower/debug_image sensor_msgs/Image
-      /line_follower/mask        sensor_msgs/Image
-    """
-
     def __init__(self):
         super().__init__('line_follower_node')
 
         # Topics
         self.declare_parameter('image_topic', '/camera/image_raw')
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
-        self.declare_parameter('servo_topic', '/servo_cmd')
+        self.declare_parameter('debug_image_topic', '/line_follower/debug_image')
+        self.declare_parameter('mask_topic', '/line_follower/mask')
 
-        # Camera / image processing
-        self.declare_parameter('image_width', 640)
-        self.declare_parameter('image_height', 480)
-        self.declare_parameter('roi_1', [240.0, 280.0, 0.0, 640.0, 0.10])
-        self.declare_parameter('roi_2', [340.0, 380.0, 0.0, 640.0, 0.30])
-        self.declare_parameter('roi_3', [420.0, 470.0, 0.0, 640.0, 0.60])
-        self.declare_parameter('min_contour_area', 150.0)
-        self.declare_parameter('morph_kernel_size', 5)
+        # Detection mode: "brightness" or "hsv"
+        self.declare_parameter('detection_mode', 'brightness')
 
-        # HSV limits for yellow on black floor.
-        # Tune these if lighting changes: hue around 20-40 is common for yellow in OpenCV HSV.
+        # Brightness binary filter
+        self.declare_parameter('brightness_threshold', 180)
+        self.declare_parameter('blur_kernel', 5)
+        self.declare_parameter('morph_kernel', 5)
+
+        # HSV fallback
         self.declare_parameter('h_min', 18)
         self.declare_parameter('s_min', 70)
         self.declare_parameter('v_min', 70)
@@ -52,293 +36,273 @@ class LineFollowerNode(Node):
         self.declare_parameter('s_max', 255)
         self.declare_parameter('v_max', 255)
 
-        # Control
-        self.declare_parameter('base_speed', 0.08)          # m/s, start slow
-        self.declare_parameter('kp_angular', 0.90)          # rad/s per normalized error
-        self.declare_parameter('max_angular_speed', 0.75)   # rad/s
-        self.declare_parameter('angular_sign', -1.0)        # -1: line right -> turn right for ROS convention
-        self.declare_parameter('slowdown_on_error', 0.45)   # reduce forward speed on curves
-        self.declare_parameter('lost_line_timeout', 0.25)   # seconds
+        # ROI format: [y1, y2, x1, x2, weight]
+        # For 320x240 image, centered region
+        self.declare_parameter('roi_1', [105.0, 130.0, 80.0, 240.0, 0.15])
+        self.declare_parameter('roi_2', [145.0, 175.0, 80.0, 240.0, 0.30])
+        self.declare_parameter('roi_3', [190.0, 235.0, 80.0, 240.0, 0.55])
+
+        # Control parameters
+        self.declare_parameter('base_speed', 0.15)
+        self.declare_parameter('kp_angular', 0.80)
+        self.declare_parameter('max_angular_speed', 1.00)
+        self.declare_parameter('angular_sign', -1.0)
+        self.declare_parameter('slowdown_on_error', 0.20)
+
+        # Detection safety
+        self.declare_parameter('min_contour_area', 40.0)
         self.declare_parameter('search_when_lost', False)
-        self.declare_parameter('search_angular_speed', 0.25)
+        self.declare_parameter('search_angular_speed', 0.40)
 
-        # Servo initial pose to point camera toward the floor.
-        self.declare_parameter('set_camera_servo', True)
-        self.declare_parameter('servo_pan', 1500)
-        self.declare_parameter('servo_tilt', 500)
-        self.declare_parameter('servo_init_duration', 3.0)
-        self.declare_parameter('servo_publish_period', 0.5)
+        self.image_topic = self.get_parameter('image_topic').value
+        self.cmd_vel_topic = self.get_parameter('cmd_vel_topic').value
+        self.debug_image_topic = self.get_parameter('debug_image_topic').value
+        self.mask_topic = self.get_parameter('mask_topic').value
 
-        # Debug
-        self.declare_parameter('publish_debug', True)
-        self.declare_parameter('show_debug_window', False)  # keep False on Ubuntu Server/headless
-        self.declare_parameter('log_every_n_frames', 10)
+        self.detection_mode = str(self.get_parameter('detection_mode').value)
 
-        self.image_topic = str(self.get_parameter('image_topic').value)
-        self.cmd_vel_topic = str(self.get_parameter('cmd_vel_topic').value)
-        self.servo_topic = str(self.get_parameter('servo_topic').value)
+        self.brightness_threshold = int(self.get_parameter('brightness_threshold').value)
+        self.blur_kernel = int(self.get_parameter('blur_kernel').value)
+        self.morph_kernel = int(self.get_parameter('morph_kernel').value)
 
-        self.image_width = int(self.get_parameter('image_width').value)
-        self.image_height = int(self.get_parameter('image_height').value)
+        self.h_min = int(self.get_parameter('h_min').value)
+        self.s_min = int(self.get_parameter('s_min').value)
+        self.v_min = int(self.get_parameter('v_min').value)
+        self.h_max = int(self.get_parameter('h_max').value)
+        self.s_max = int(self.get_parameter('s_max').value)
+        self.v_max = int(self.get_parameter('v_max').value)
+
         self.rois = [
             self._parse_roi(self.get_parameter('roi_1').value),
             self._parse_roi(self.get_parameter('roi_2').value),
             self._parse_roi(self.get_parameter('roi_3').value),
         ]
-        self.min_contour_area = float(self.get_parameter('min_contour_area').value)
-        self.morph_kernel_size = int(self.get_parameter('morph_kernel_size').value)
-
-        self.lower_yellow = np.array([
-            int(self.get_parameter('h_min').value),
-            int(self.get_parameter('s_min').value),
-            int(self.get_parameter('v_min').value),
-        ], dtype=np.uint8)
-        self.upper_yellow = np.array([
-            int(self.get_parameter('h_max').value),
-            int(self.get_parameter('s_max').value),
-            int(self.get_parameter('v_max').value),
-        ], dtype=np.uint8)
 
         self.base_speed = float(self.get_parameter('base_speed').value)
         self.kp_angular = float(self.get_parameter('kp_angular').value)
         self.max_angular_speed = float(self.get_parameter('max_angular_speed').value)
         self.angular_sign = float(self.get_parameter('angular_sign').value)
         self.slowdown_on_error = float(self.get_parameter('slowdown_on_error').value)
-        self.lost_line_timeout = float(self.get_parameter('lost_line_timeout').value)
+
+        self.min_contour_area = float(self.get_parameter('min_contour_area').value)
         self.search_when_lost = bool(self.get_parameter('search_when_lost').value)
         self.search_angular_speed = float(self.get_parameter('search_angular_speed').value)
 
-        self.set_camera_servo = bool(self.get_parameter('set_camera_servo').value)
-        self.servo_pan = int(self.get_parameter('servo_pan').value)
-        self.servo_tilt = int(self.get_parameter('servo_tilt').value)
-        self.servo_init_duration = float(self.get_parameter('servo_init_duration').value)
-        self.servo_publish_period = float(self.get_parameter('servo_publish_period').value)
-
-        self.publish_debug = bool(self.get_parameter('publish_debug').value)
-        self.show_debug_window = bool(self.get_parameter('show_debug_window').value)
-        self.log_every_n_frames = int(self.get_parameter('log_every_n_frames').value)
-
         self.bridge = CvBridge()
-        self.frame_count = 0
-        self.last_seen_time = time.monotonic()
-        self.last_error = 0.0
-        self.warned_mono = False
-        self.start_time = time.monotonic()
 
         self.cmd_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
-        self.servo_pub = self.create_publisher(Int32MultiArray, self.servo_topic, 10)
-        self.debug_pub = self.create_publisher(Image, '/line_follower/debug_image', 10)
-        self.mask_pub = self.create_publisher(Image, '/line_follower/mask', 10)
+        self.debug_pub = self.create_publisher(Image, self.debug_image_topic, 10)
+        self.mask_pub = self.create_publisher(Image, self.mask_topic, 10)
 
-        self.image_sub = self.create_subscription(Image, self.image_topic, self.image_callback, 10)
-        self.servo_timer = self.create_timer(self.servo_publish_period, self.publish_initial_servo_pose)
-
-        self.get_logger().info('Yellow line follower started.')
-        self.get_logger().info(f'Subscribing: {self.image_topic} | Publishing: {self.cmd_vel_topic}')
-        self.get_logger().info(
-            f'HSV yellow lower={self.lower_yellow.tolist()} upper={self.upper_yellow.tolist()} | '
-            f'base_speed={self.base_speed:.2f} kp={self.kp_angular:.2f}'
+        self.image_sub = self.create_subscription(
+            Image,
+            self.image_topic,
+            self.image_callback,
+            10
         )
 
-    def _parse_roi(self, value):
-        data = list(value)
-        if len(data) != 5:
-            raise ValueError('ROI must be [y1, y2, x1, x2, weight]')
-        y1, y2, x1, x2 = [int(v) for v in data[:4]]
-        weight = float(data[4])
-        return y1, y2, x1, x2, weight
+        self.get_logger().info('Line follower node started.')
+        self.get_logger().info(f'Detection mode: {self.detection_mode}')
+        self.get_logger().info(f'Subscribing: {self.image_topic}')
+        self.get_logger().info(f'Brightness threshold: {self.brightness_threshold}')
+        self.get_logger().info(f'ROIs: {self.rois}')
 
-    def publish_initial_servo_pose(self):
-        if not self.set_camera_servo:
-            self.servo_timer.cancel()
-            return
+    def _parse_roi(self, values):
+        y1, y2, x1, x2, weight = values
+        return int(y1), int(y2), int(x1), int(x2), float(weight)
 
-        elapsed = time.monotonic() - self.start_time
-        if elapsed > self.servo_init_duration:
-            self.servo_timer.cancel()
-            return
+    def make_mask(self, frame_bgr):
+        if self.detection_mode == 'brightness':
+            gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
 
-        msg = Int32MultiArray()
-        msg.data = [self.servo_pan, self.servo_tilt]
-        self.servo_pub.publish(msg)
+            if self.blur_kernel > 1:
+                k = self.blur_kernel
+                if k % 2 == 0:
+                    k += 1
+                gray = cv2.GaussianBlur(gray, (k, k), 0)
+
+            _, mask = cv2.threshold(
+                gray,
+                self.brightness_threshold,
+                255,
+                cv2.THRESH_BINARY
+            )
+
+        else:
+            hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+            lower = np.array([self.h_min, self.s_min, self.v_min], dtype=np.uint8)
+            upper = np.array([self.h_max, self.s_max, self.v_max], dtype=np.uint8)
+            mask = cv2.inRange(hsv, lower, upper)
+
+        if self.morph_kernel > 1:
+            k = self.morph_kernel
+            kernel = np.ones((k, k), np.uint8)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+        return mask
 
     def image_callback(self, msg):
-        self.frame_count += 1
-
         try:
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as exc:
-            self.get_logger().error(f'Could not convert camera image to bgr8: {exc}')
-            self.publish_stop()
+            self.get_logger().error(f'cv_bridge error: {exc}')
             return
 
-        if msg.encoding.lower() in ('mono8', '8uc1') and not self.warned_mono:
-            self.warned_mono = True
-            self.get_logger().warn(
-                'Camera image is grayscale/mono. Yellow detection needs color. '
-                'Set camera_node publish_grayscale=false.'
-            )
+        h, w = frame.shape[:2]
 
-        frame = cv2.resize(frame, (self.image_width, self.image_height), interpolation=cv2.INTER_NEAREST)
+        raw_mask = self.make_mask(frame)
+
+        # Only keep the binary mask inside the configured ROIs.
+        # This makes /line_follower/mask easier to debug and prevents
+        # bright reflections outside the useful region from being considered.
+        mask = np.zeros_like(raw_mask)
+
+        for y1, y2, x1, x2, _weight in self.rois:
+            y1 = max(0, min(h - 1, int(y1)))
+            y2 = max(0, min(h, int(y2)))
+            x1 = max(0, min(w - 1, int(x1)))
+            x2 = max(0, min(w, int(x2)))
+
+            mask[y1:y2, x1:x2] = raw_mask[y1:y2, x1:x2]
+
         debug = frame.copy()
-        full_mask = np.zeros((self.image_height, self.image_width), dtype=np.uint8)
 
-        center_x, area_total = self.detect_line_center(frame, debug, full_mask)
+        weighted_sum_x = 0.0
+        total_weight = 0.0
+        total_area = 0.0
 
-        if center_x is None:
-            if time.monotonic() - self.last_seen_time > self.lost_line_timeout:
-                if self.search_when_lost:
-                    self.publish_velocity(0.0, self.search_angular_speed * math.copysign(1.0, self.last_error or 1.0))
-                else:
-                    self.publish_stop()
-            self.publish_debug_images(debug, full_mask)
-            return
+        for idx, (y1, y2, x1, x2, weight) in enumerate(self.rois):
+            y1 = max(0, min(h - 1, y1))
+            y2 = max(0, min(h, y2))
+            x1 = max(0, min(w - 1, x1))
+            x2 = max(0, min(w, x2))
 
-        self.last_seen_time = time.monotonic()
-        error_px = center_x - (self.image_width / 2.0)
-        error_norm = error_px / (self.image_width / 2.0)
-        self.last_error = error_norm
+            roi_mask = mask[y1:y2, x1:x2]
 
-        angular_z = self.angular_sign * self.kp_angular * error_norm
-        angular_z = self.clamp(angular_z, self.max_angular_speed)
-
-        speed_scale = 1.0 - self.slowdown_on_error * min(abs(error_norm), 1.0)
-        linear_x = self.base_speed * max(0.35, speed_scale)
-
-        self.publish_velocity(linear_x, angular_z)
-
-        cv2.line(debug, (self.image_width // 2, 0), (self.image_width // 2, self.image_height), (255, 0, 0), 2)
-        cv2.circle(debug, (int(center_x), self.image_height - 35), 10, (0, 255, 255), -1)
-        cv2.putText(
-            debug,
-            f'cx={center_x:.0f} err={error_norm:+.2f} vx={linear_x:.2f} wz={angular_z:+.2f}',
-            (10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.65,
-            (0, 255, 255),
-            2,
-        )
-
-        if self.frame_count % max(1, self.log_every_n_frames) == 0:
-            self.get_logger().info(
-                f'line_center={center_x:.1f} error={error_norm:+.2f} area={area_total:.0f} '
-                f'cmd linear.x={linear_x:.2f} angular.z={angular_z:+.2f}'
+            contours, _ = cv2.findContours(
+                roi_mask,
+                cv2.RETR_EXTERNAL,
+                cv2.CHAIN_APPROX_SIMPLE
             )
 
-        self.publish_debug_images(debug, full_mask)
+            cv2.rectangle(debug, (x1, y1), (x2, y2), (120, 120, 120), 1)
 
-    def detect_line_center(self, frame, debug, full_mask):
-        weighted_sum = 0.0
-        weight_sum = 0.0
-        area_total = 0.0
-
-        kernel_size = max(1, self.morph_kernel_size)
-        kernel = np.ones((kernel_size, kernel_size), np.uint8)
-
-        for y1, y2, x1, x2, weight in self.rois:
-            y1 = self.clamp_int(y1, 0, self.image_height - 1)
-            y2 = self.clamp_int(y2, y1 + 1, self.image_height)
-            x1 = self.clamp_int(x1, 0, self.image_width - 1)
-            x2 = self.clamp_int(x2, x1 + 1, self.image_width)
-
-            roi = frame[y1:y2, x1:x2]
-            hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-            mask = cv2.inRange(hsv, self.lower_yellow, self.upper_yellow)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-            full_mask[y1:y2, x1:x2] = mask
-
-            contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
             if not contours:
-                cv2.rectangle(debug, (x1, y1), (x2, y2), (80, 80, 80), 1)
                 continue
 
-            contour = max(contours, key=cv2.contourArea)
-            area = float(cv2.contourArea(contour))
+            largest = max(contours, key=cv2.contourArea)
+            area = cv2.contourArea(largest)
+
             if area < self.min_contour_area:
-                cv2.rectangle(debug, (x1, y1), (x2, y2), (80, 80, 80), 1)
                 continue
 
-            moments = cv2.moments(contour)
-            if abs(moments['m00']) < 1e-6:
+            moments = cv2.moments(largest)
+            if moments['m00'] == 0:
                 continue
 
-            cx_local = moments['m10'] / moments['m00']
-            cy_local = moments['m01'] / moments['m00']
+            cx_local = int(moments['m10'] / moments['m00'])
+            cy_local = int(moments['m01'] / moments['m00'])
+
             cx = x1 + cx_local
             cy = y1 + cy_local
 
-            weighted_sum += cx * weight
-            weight_sum += weight
-            area_total += area
+            weighted_sum_x += cx * weight
+            total_weight += weight
+            total_area += area
 
-            contour_shifted = contour.copy()
-            contour_shifted[:, :, 0] += x1
-            contour_shifted[:, :, 1] += y1
-            cv2.drawContours(debug, [contour_shifted], -1, (0, 0, 255), 2)
-            cv2.circle(debug, (int(cx), int(cy)), 5, (0, 255, 255), -1)
-            cv2.rectangle(debug, (x1, y1), (x2, y2), (0, 255, 0), 1)
+            cv2.circle(debug, (cx, cy), 5, (0, 0, 255), -1)
+            cv2.putText(
+                debug,
+                f'ROI{idx + 1} area={int(area)}',
+                (x1 + 5, max(15, y1 - 5)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.35,
+                (0, 0, 255),
+                1
+            )
 
-        if weight_sum <= 0.0:
-            cv2.putText(debug, 'LINE LOST', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-            return None, area_total
+        twist = Twist()
 
-        return weighted_sum / weight_sum, area_total
+        if total_weight > 0.0:
+            line_center_x = weighted_sum_x / total_weight
+            image_center_x = w / 2.0
+            error_px = line_center_x - image_center_x
+            error_norm = error_px / image_center_x
 
-    def publish_velocity(self, linear_x, angular_z):
-        msg = Twist()
-        msg.linear.x = float(linear_x)
-        msg.angular.z = float(angular_z)
-        self.cmd_pub.publish(msg)
+            angular_z = self.angular_sign * self.kp_angular * error_norm
+            angular_z = max(-self.max_angular_speed, min(self.max_angular_speed, angular_z))
 
-    def publish_stop(self):
-        self.publish_velocity(0.0, 0.0)
+            speed_factor = 1.0 - min(abs(error_norm), 1.0) * self.slowdown_on_error
+            linear_x = self.base_speed * speed_factor
 
-    def publish_debug_images(self, debug, mask):
-        if self.publish_debug:
-            stamp = self.get_clock().now().to_msg()
+            twist.linear.x = linear_x
+            twist.angular.z = angular_z
 
-            debug_msg = self.bridge.cv2_to_imgmsg(debug, encoding='bgr8')
-            debug_msg.header.stamp = stamp
-            debug_msg.header.frame_id = 'camera_link'
-            self.debug_pub.publish(debug_msg)
+            cv2.line(debug, (int(image_center_x), 0), (int(image_center_x), h), (255, 0, 0), 1)
+            cv2.circle(debug, (int(line_center_x), int(h * 0.85)), 7, (0, 255, 0), -1)
 
-            mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
-            mask_msg.header.stamp = stamp
-            mask_msg.header.frame_id = 'camera_link'
-            self.mask_pub.publish(mask_msg)
+            cv2.putText(
+                debug,
+                f'CENTER={line_center_x:.1f} ERR={error_norm:.2f}',
+                (10, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                2
+            )
 
-        if self.show_debug_window:
-            cv2.imshow('line_follower_debug', debug)
-            cv2.imshow('line_follower_mask', mask)
-            cv2.waitKey(1)
+            cv2.putText(
+                debug,
+                f'CMD x={linear_x:.2f} z={angular_z:.2f}',
+                (10, 45),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                2
+            )
 
-    @staticmethod
-    def clamp(value, limit):
-        return max(min(value, limit), -limit)
+        else:
+            if self.search_when_lost:
+                twist.angular.z = self.search_angular_speed
+            else:
+                twist.linear.x = 0.0
+                twist.angular.z = 0.0
 
-    @staticmethod
-    def clamp_int(value, low, high):
-        return max(min(int(value), int(high)), int(low))
+            cv2.putText(
+                debug,
+                'LINE LOST',
+                (10, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (0, 0, 255),
+                2
+            )
 
-    def destroy_node(self):
-        self.publish_stop()
-        if self.show_debug_window:
-            cv2.destroyAllWindows()
-        super().destroy_node()
+        self.cmd_pub.publish(twist)
+
+        mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
+        mask_msg.header = msg.header
+        self.mask_pub.publish(mask_msg)
+
+        debug_msg = self.bridge.cv2_to_imgmsg(debug, encoding='bgr8')
+        debug_msg.header = msg.header
+        self.debug_pub.publish(debug_msg)
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = LineFollowerNode()
+
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
+        stop = Twist()
+        node.cmd_pub.publish(stop)
         node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':

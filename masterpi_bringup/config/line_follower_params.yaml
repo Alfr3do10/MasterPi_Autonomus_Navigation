@@ -2,18 +2,15 @@ line_follower_node:
   ros__parameters:
     image_topic: /camera/image_raw
     cmd_vel_topic: /cmd_vel
-    servo_topic: /servo_cmd
+    debug_image_topic: /line_follower/debug_image
+    mask_topic: /line_follower/mask
 
-    image_width: 640
-    image_height: 480
+    detection_mode: brightness
 
-    # Three horizontal regions of interest: [y1, y2, x1, x2, weight]
-    # The bottom ROI has the highest weight because it is closest to the robot.
-    roi_1: [120.0, 140.0, 0.0, 320.0, 0.10]
-    roi_2: [160.0, 185.0, 0.0, 320.0, 0.30]
-    roi_3: [200.0, 235.0, 0.0, 320.0, 0.60]
+    brightness_threshold: 180
+    blur_kernel: 5
+    morph_kernel: 5
 
-    # Yellow threshold in OpenCV HSV. Tune this with /line_follower/mask.
     h_min: 18
     s_min: 70
     v_min: 70
@@ -21,26 +18,16 @@ line_follower_node:
     s_max: 255
     v_max: 255
 
-    min_contour_area: 150.0
-    morph_kernel_size: 5
+    roi_1: [105.0, 130.0, 80.0, 240.0, 0.15]
+    roi_2: [145.0, 175.0, 80.0, 240.0, 0.30]
+    roi_3: [190.0, 235.0, 80.0, 240.0, 0.55]
 
-    # Start conservative. Increase base_speed after it follows reliably.
-    base_speed: 0.08
-    kp_angular: 0.90
-    max_angular_speed: 0.75
+    base_speed: 0.15
+    kp_angular: 0.80
+    max_angular_speed: 1.00
     angular_sign: -1.0
-    slowdown_on_error: 0.45
-    lost_line_timeout: 0.25
+    slowdown_on_error: 0.20
+
+    min_contour_area: 40.0
     search_when_lost: false
-    search_angular_speed: 0.25
-
-    # Camera servo pose. For your current package, tilt_channel is 3 and default_tilt is 500.
-    set_camera_servo: true
-    servo_pan: 1500
-    servo_tilt: 500
-    servo_init_duration: 3.0
-    servo_publish_period: 0.5
-
-    publish_debug: true
-    show_debug_window: false
-    log_every_n_frames: 10
+    search_angular_speed: 0.40
