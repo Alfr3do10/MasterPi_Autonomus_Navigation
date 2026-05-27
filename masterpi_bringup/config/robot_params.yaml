@@ -37,9 +37,11 @@ camera_node:
   ros__parameters:
     camera_index: 0
     frame_id: camera_link
-    publish_rate: 10.0
+    publish_rate: 15.0
+    image_width: 320
+    image_height: 240
     use_mock_hardware: false
-    publish_grayscale: true
+    publish_grayscale: false
 
 odom_node:
   ros__parameters:
