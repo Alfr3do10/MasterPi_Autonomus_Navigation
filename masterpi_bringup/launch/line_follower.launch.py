@@ -1,4 +1,5 @@
 from launch import LaunchDescription
+from launch.actions import TimerAction
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -17,20 +18,12 @@ def generate_launch_description():
         'line_follower_params.yaml'
     ])
 
-    motor_node = Node(
+    line_follower_pose_node = Node(
         package='masterpi_bringup',
-        executable='motor_node',
-        name='motor_node',
+        executable='line_follower_pose_node',
+        name='line_follower_pose_node',
         output='screen',
-        parameters=[robot_params]
-    )
-
-    servo_node = Node(
-        package='masterpi_bringup',
-        executable='servo_node',
-        name='servo_node',
-        output='screen',
-        parameters=[robot_params]
+        parameters=[line_params]
     )
 
     camera_node = Node(
@@ -49,9 +42,32 @@ def generate_launch_description():
         parameters=[line_params]
     )
 
+    motor_node = Node(
+        package='masterpi_bringup',
+        executable='motor_node',
+        name='motor_node',
+        output='screen',
+        parameters=[robot_params]
+    )
+
+    delayed_camera_node = TimerAction(
+        period=1.2,
+        actions=[camera_node]
+    )
+
+    delayed_line_follower_node = TimerAction(
+        period=2.0,
+        actions=[line_follower_node]
+    )
+
+    delayed_motor_node = TimerAction(
+        period=2.5,
+        actions=[motor_node]
+    )
+
     return LaunchDescription([
-        motor_node,
-        servo_node,
-        camera_node,
-        line_follower_node,
+        line_follower_pose_node,
+        delayed_camera_node,
+        delayed_line_follower_node,
+        delayed_motor_node,
     ])

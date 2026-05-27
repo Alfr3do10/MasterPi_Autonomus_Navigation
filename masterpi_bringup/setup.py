@@ -45,6 +45,7 @@ setup(
             'sonar_node = masterpi_bringup.sonar_node:main',
             'aruco = masterpi_bringup.aruco:main',
             'line_follower_node = masterpi_bringup.line_follower_node:main',
+            'line_follower_pose_node = masterpi_bringup.line_follower_pose_node:main',
         ],
     },
 )
