@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # encoding:utf-8
 import sys
-sys.path.append('/home/pi/MasterPi/')
 import cv2
 import time
 import threading
 import numpy as np
-#from CameraCalibration.CalibrationConfig import *
+
+# >>> ELIMINAMOS LAS LÍNEAS DE SYS.PATH Y DEL IMPORT DE CALIBRATIONCONFIG <<<
 
 if sys.version_info.major == 2:
     print('Please run this program with python3!')
@@ -19,7 +19,14 @@ class Camera:
         self.height = resolution[1]
         self.frame = None
         self.opened = False
-        #加载参数
+        
+        # -----------------------------------------------------------------
+        # SOLUCIÓN: Definimos la ruta directa a tu carpeta de calibración.
+        # (Se le quita el '.npz' del final porque abajo el código se lo suma automáticamente)
+        # -----------------------------------------------------------------
+        calibration_param_path = '/home/rosario/ros2_ws_masterpi/src/masterpi_bringup/config/calibration/calibration_param'
+        
+        # Cargar parámetros (.npz)
         self.param_data = np.load(calibration_param_path + '.npz')
         
         #获取参数
