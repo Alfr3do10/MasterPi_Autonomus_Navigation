@@ -44,10 +44,17 @@ class LineFollowerNode(Node):
 
         # Control parameters
         self.declare_parameter('base_speed', 0.15)
-        self.declare_parameter('kp_angular', 0.80)
+        self.declare_parameter('kp_angular', 0.60)
+        self.declare_parameter('ki_angular', 0.00)
+        self.declare_parameter('kd_angular', 0.25)
+        self.declare_parameter('min_linear_speed', 0.15)
+        self.declare_parameter('max_linear_speed', 0.18)
+        self.declare_parameter('min_angular_speed', 0.35)
         self.declare_parameter('max_angular_speed', 1.00)
         self.declare_parameter('angular_sign', -1.0)
-        self.declare_parameter('slowdown_on_error', 0.20)
+        self.declare_parameter('slowdown_on_error', 0.25)
+        self.declare_parameter('deadband_error', 0.03)
+        self.declare_parameter('integral_limit', 0.40)
 
         # Detection safety
         self.declare_parameter('min_contour_area', 40.0)
@@ -80,13 +87,25 @@ class LineFollowerNode(Node):
 
         self.base_speed = float(self.get_parameter('base_speed').value)
         self.kp_angular = float(self.get_parameter('kp_angular').value)
+        self.ki_angular = float(self.get_parameter('ki_angular').value)
+        self.kd_angular = float(self.get_parameter('kd_angular').value)
+        self.min_linear_speed = float(self.get_parameter('min_linear_speed').value)
+        self.max_linear_speed = float(self.get_parameter('max_linear_speed').value)
+        self.min_angular_speed = float(self.get_parameter('min_angular_speed').value)
         self.max_angular_speed = float(self.get_parameter('max_angular_speed').value)
         self.angular_sign = float(self.get_parameter('angular_sign').value)
         self.slowdown_on_error = float(self.get_parameter('slowdown_on_error').value)
+        self.deadband_error = float(self.get_parameter('deadband_error').value)
+        self.integral_limit = float(self.get_parameter('integral_limit').value)
 
         self.min_contour_area = float(self.get_parameter('min_contour_area').value)
         self.search_when_lost = bool(self.get_parameter('search_when_lost').value)
         self.search_angular_speed = float(self.get_parameter('search_angular_speed').value)
+
+        # PID state. Integral starts disabled when ki_angular is 0.0.
+        self.integral_error = 0.0
+        self.last_error = None
+        self.last_time = None
 
         self.bridge = CvBridge()
 
@@ -106,6 +125,14 @@ class LineFollowerNode(Node):
         self.get_logger().info(f'Subscribing: {self.image_topic}')
         self.get_logger().info(f'Brightness threshold: {self.brightness_threshold}')
         self.get_logger().info(f'ROIs: {self.rois}')
+        self.get_logger().info(
+            f'Control gains | kp={self.kp_angular:.3f}, '
+            f'ki={self.ki_angular:.3f}, kd={self.kd_angular:.3f}'
+        )
+        self.get_logger().info(
+            f'Limits | linear=[{self.min_linear_speed:.2f}, {self.max_linear_speed:.2f}], '
+            f'angular=[{self.min_angular_speed:.2f}, {self.max_angular_speed:.2f}]'
+        )
 
     def _parse_roi(self, values):
         y1, y2, x1, x2, weight = values
@@ -230,14 +257,53 @@ class LineFollowerNode(Node):
             error_px = line_center_x - image_center_x
             error_norm = error_px / image_center_x
 
-            angular_z = self.angular_sign * self.kp_angular * error_norm
+            if abs(error_norm) < self.deadband_error:
+                control_error = 0.0
+            else:
+                control_error = error_norm
+
+            now = self.get_clock().now().nanoseconds / 1e9
+            if self.last_time is None:
+                dt = 0.0
+            else:
+                dt = max(1e-3, now - self.last_time)
+
+            if control_error == 0.0:
+                self.integral_error = 0.0
+                derivative_error = 0.0
+            else:
+                self.integral_error += control_error * dt
+                self.integral_error = max(
+                    -self.integral_limit,
+                    min(self.integral_limit, self.integral_error)
+                )
+
+                if self.last_error is None or dt == 0.0:
+                    derivative_error = 0.0
+                else:
+                    derivative_error = (control_error - self.last_error) / dt
+
+            pid_output = (
+                self.kp_angular * control_error
+                + self.ki_angular * self.integral_error
+                + self.kd_angular * derivative_error
+            )
+
+            angular_z = self.angular_sign * pid_output
             angular_z = max(-self.max_angular_speed, min(self.max_angular_speed, angular_z))
 
-            speed_factor = 1.0 - min(abs(error_norm), 1.0) * self.slowdown_on_error
+            if control_error != 0.0 and 0.0 < abs(angular_z) < self.min_angular_speed:
+                angular_z = self.min_angular_speed if angular_z > 0.0 else -self.min_angular_speed
+
+            speed_factor = 1.0 - min(abs(control_error), 1.0) * self.slowdown_on_error
             linear_x = self.base_speed * speed_factor
+            linear_x = max(self.min_linear_speed, min(self.max_linear_speed, linear_x))
 
             twist.linear.x = linear_x
             twist.angular.z = angular_z
+
+            self.last_error = control_error
+            self.last_time = now
 
             cv2.line(debug, (int(image_center_x), 0), (int(image_center_x), h), (255, 0, 0), 1)
             cv2.circle(debug, (int(line_center_x), int(h * 0.85)), 7, (0, 255, 0), -1)
@@ -263,6 +329,10 @@ class LineFollowerNode(Node):
             )
 
         else:
+            self.integral_error = 0.0
+            self.last_error = None
+            self.last_time = None
+
             if self.search_when_lost:
                 twist.angular.z = self.search_angular_speed
             else:

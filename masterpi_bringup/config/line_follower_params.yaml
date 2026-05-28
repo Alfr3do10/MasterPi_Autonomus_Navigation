@@ -18,15 +18,26 @@ line_follower_node:
     s_max: 255
     v_max: 255
 
-    roi_1: [105.0, 130.0, 80.0, 240.0, 0.15]
-    roi_2: [145.0, 175.0, 80.0, 240.0, 0.30]
-    roi_3: [190.0, 235.0, 80.0, 240.0, 0.55]
+    roi_1: [95.0, 140.0, 95.0, 225.0, 0.15]
+    roi_2: [132.0, 185.0, 80.0, 240.0, 0.30]
+    roi_3: [178.0, 236.0, 60.0, 260.0, 0.55]
 
-    base_speed: 0.15
-    kp_angular: 0.80
-    max_angular_speed: 1.00
-    angular_sign: -1.0
-    slowdown_on_error: 0.20
+    base_speed: 0.13
+
+    kp_angular: 1.40
+    ki_angular: 0.00
+    kd_angular: 0.00
+
+    min_linear_speed: 0.13
+    max_linear_speed: 0.13
+
+    min_angular_speed: 0.00
+    max_angular_speed: 0.80
+
+    angular_sign: 1.0
+    slowdown_on_error: 0.00
+    deadband_error: 0.04
+    integral_limit: 0.00
 
     min_contour_area: 40.0
     search_when_lost: false
