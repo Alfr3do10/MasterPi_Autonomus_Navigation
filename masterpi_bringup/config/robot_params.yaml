@@ -49,3 +49,8 @@ odom_node:
     odom_frame: odom
     base_frame: base_link
     use_mock_hardware: true
+
+aruco_node:
+  ros__parameters:
+    aruco_dictionary: "DICT_4X4_50"
+    show_image: false
