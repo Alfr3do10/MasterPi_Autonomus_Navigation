@@ -7,6 +7,10 @@
   <maintainer email="jp@todo.todo">jp</maintainer>
   <license>MIT</license>
 
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <depend>rclcpp</depend>
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
@@ -16,8 +20,7 @@
   <depend>image_transport</depend>
   <depend>tf2_ros</depend>
   <depend>ament_index_python</depend>
-
-  <exec_depend>launch</exec_depend>
+  <depend>opencv</depend> <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
@@ -26,6 +29,6 @@
   <test_depend>python3-pytest</test_depend>
 
   <export>
-    <build_type>ament_python</build_type>
+    <build_type>ament_cmake</build_type>
   </export>
 </package>

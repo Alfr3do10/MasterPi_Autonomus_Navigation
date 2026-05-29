@@ -20,7 +20,7 @@ def generate_launch_description():
 
     line_follower_pose_node = Node(
         package='masterpi_bringup',
-        executable='line_follower_pose_node',
+        executable='line_follower_pose_node.py',
         name='line_follower_pose_node',
         output='screen',
         parameters=[line_params]
@@ -28,7 +28,7 @@ def generate_launch_description():
 
     camera_node = Node(
         package='masterpi_bringup',
-        executable='camera_node',
+        executable='camera_node_cpp',
         name='camera_node',
         output='screen',
         parameters=[robot_params]
@@ -36,7 +36,7 @@ def generate_launch_description():
 
     line_follower_node = Node(
         package='masterpi_bringup',
-        executable='line_follower_node',
+        executable='line_follower_node.py',
         name='line_follower_node',
         output='screen',
         parameters=[line_params]
@@ -44,30 +44,15 @@ def generate_launch_description():
 
     motor_node = Node(
         package='masterpi_bringup',
-        executable='motor_node',
+        executable='motor_node.py',
         name='motor_node',
         output='screen',
         parameters=[robot_params]
     )
 
-    delayed_camera_node = TimerAction(
-        period=1.2,
-        actions=[camera_node]
-    )
-
-    delayed_line_follower_node = TimerAction(
-        period=2.0,
-        actions=[line_follower_node]
-    )
-
-    delayed_motor_node = TimerAction(
-        period=2.5,
-        actions=[motor_node]
-    )
-
     return LaunchDescription([
         line_follower_pose_node,
-        delayed_camera_node,
-        delayed_line_follower_node,
-        delayed_motor_node,
+        TimerAction(period=1.2, actions=[camera_node]),
+        TimerAction(period=2.0, actions=[line_follower_node]),
+        TimerAction(period=2.5, actions=[motor_node]),
     ])

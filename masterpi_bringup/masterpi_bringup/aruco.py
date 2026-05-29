@@ -20,6 +20,7 @@ class ArucoDetectorNode(Node):
 
         # 2. Configuración específica de ArUco para OpenCV 4.5.4
         # En esta versión se accede a los diccionarios mediante cv2.aruco.Dictionary_get()
+        self.show_image=False
         try:
             dictionary_id = getattr(cv2.aruco, dictionary_name)
             self.aruco_dictionary = cv2.aruco.Dictionary_get(dictionary_id)
