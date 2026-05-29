@@ -11,6 +11,7 @@ endif()
 
 # 1. BUSCAR DEPENDENCIAS DE ROS 2 Y SISTEMA
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
@@ -71,4 +72,5 @@ install(
 # ==============================================================================
 # CIERRE DE PAQUETE
 # ==============================================================================
+ament_python_install_package(${PROJECT_NAME})
 ament_package()
