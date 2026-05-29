@@ -58,6 +58,7 @@ install(
   masterpi_bringup/__init__.py
   masterpi_bringup/camera_node.py
   masterpi_bringup/line_follower_node.py
+  masterpi_bringup/line_follower_pose_node.py
   masterpi_bringup/aruco.py
   masterpi_bringup/battery_node.py
   masterpi_bringup/motor_node.py
