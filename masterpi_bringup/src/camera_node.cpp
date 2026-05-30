@@ -15,13 +15,21 @@ public:
         // Configuración de los nuevos parámetros solicitados
         this->declare_parameter<std::string>("frame_id", "camera_link");
         this->declare_parameter<double>("publish_rate", 15.0); // Modificado a 15 Hz
+        this->declare_parameter<bool>("publish_color", true);
+        this->declare_parameter<bool>("publish_gray", true);
+        this->declare_parameter<std::string>("image_topic", "/camera/image_raw");
+        this->declare_parameter<std::string>("gray_topic", "/camera/image_gray");
         
         this->get_parameter("frame_id", frame_id_);
         this->get_parameter("publish_rate", publish_rate_);
+        this->get_parameter("publish_color", publish_color_);
+        this->get_parameter("publish_gray", publish_gray_);
+        this->get_parameter("image_topic", image_topic_);
+        this->get_parameter("gray_topic", gray_topic_);
 
         // Ancho y alto a la mitad de la resolución estándar (640x480 -> 320x240)
-        width_ = 320;
-        height_ = 240;
+        width_ = 640;
+        height_ = 480;
 
         // Cargar y ajustar la calibración dinámicamente para 320x240
         if (!cargar_y_escalar_calibracion()) {
@@ -47,12 +55,27 @@ public:
     {
         auto shared_node = std::shared_ptr<rclcpp::Node>(this, [](rclcpp::Node*){});
         image_transport_ = std::make_unique<image_transport::ImageTransport>(shared_node);
-        image_pub_ = image_transport_->advertise("/camera/image_raw", 10);
+
+        if (publish_color_) {
+            image_pub_ = image_transport_->advertise(image_topic_, 10);
+        }
+
+        if (publish_gray_) {
+            gray_pub_ = image_transport_->advertise(gray_topic_, 10);
+        }
 
         auto interval = std::chrono::duration<double>(1.0 / publish_rate_);
         timer_ = this->create_wall_timer(interval, std::bind(&CameraNodeCpp::publish_image, this));
 
-        RCLCPP_INFO(this->get_logger(), "Nodo Optimizado iniciado a %d x %d @ %.1f Hz.", width_, height_, publish_rate_);
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Nodo Optimizado iniciado a %d x %d @ %.1f Hz. color=%s gray=%s",
+            width_,
+            height_,
+            publish_rate_,
+            publish_color_ ? image_topic_.c_str() : "off",
+            publish_gray_ ? gray_topic_.c_str() : "off"
+        );
     }
 
     ~CameraNodeCpp() override
@@ -78,16 +101,21 @@ private:
             // AJUSTE MATEMÁTICO: Escalamos la matriz intrínseca a la mitad
             // fx = mtx.at<double>(0,0), fy = mtx.at<double>(1,1)
             // cx = mtx.at<double>(0,2), cy = mtx.at<double>(1,2)
-            mtx.at<double>(0, 0) /= 2.0; // fx
-            mtx.at<double>(1, 1) /= 2.0; // fy
-            mtx.at<double>(0, 2) /= 2.0; // cx
-            mtx.at<double>(1, 2) /= 2.0; // cy
+            // mtx.at<double>(0, 0) /= 2.0; // fx
+            // mtx.at<double>(1, 1) /= 2.0; // fy
+            // mtx.at<double>(0, 2) /= 2.0; // cx
+            // mtx.at<double>(1, 2) /= 2.0; // cy
 
             cv::Size new_image_size(width_, height_);
 
-            // Pre-calculamos los mapas geométricos usando el nuevo tamaño reducido
-            cv::Mat new_camera_mtx = cv::getOptimalNewCameraMatrix(mtx, dist, new_image_size, 0, new_image_size);
-            cv::initUndistortRectifyMap(mtx, dist, cv::Mat(), new_camera_mtx, new_image_size, CV_32FC1, mapx_, mapy_);
+            cv::Mat new_camera_mtx = cv::getOptimalNewCameraMatrix(
+                mtx, dist, new_image_size, 0, new_image_size
+            );
+
+            cv::initUndistortRectifyMap(
+                mtx, dist, cv::Mat(), new_camera_mtx,
+                new_image_size, CV_32FC1, mapx_, mapy_
+            );
             
             return true;
         }
@@ -114,19 +142,39 @@ private:
         header.stamp = this->get_clock()->now();
         header.frame_id = frame_id_;
 
-        auto msg = cv_bridge::CvImage(header, "bgr8", frame_rectificado).toImageMsg();
-        image_pub_.publish(*msg);
+        if (publish_color_) {
+            auto msg = cv_bridge::CvImage(header, "bgr8", frame_rectificado).toImageMsg();
+            image_pub_.publish(*msg);
+        }
+
+        if (publish_gray_) {
+            cv::Mat frame_gray;
+
+            if (frame_rectificado.channels() == 1) {
+                frame_gray = frame_rectificado;
+            } else {
+                cv::cvtColor(frame_rectificado, frame_gray, cv::COLOR_BGR2GRAY);
+            }
+
+            auto gray_msg = cv_bridge::CvImage(header, "mono8", frame_gray).toImageMsg();
+            gray_pub_.publish(*gray_msg);
+        }
     }
 
     cv::VideoCapture cap_;
     cv::Mat mapx_, mapy_;
     std::string frame_id_;
+    std::string image_topic_;
+    std::string gray_topic_;
     double publish_rate_;
+    bool publish_color_;
+    bool publish_gray_;
     int width_;
     int height_;
     
     std::unique_ptr<image_transport::ImageTransport> image_transport_;
     image_transport::Publisher image_pub_;
+    image_transport::Publisher gray_pub_;
     rclcpp::TimerBase::SharedPtr timer_;
 };
 
