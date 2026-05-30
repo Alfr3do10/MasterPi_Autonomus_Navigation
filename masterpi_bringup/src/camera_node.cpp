@@ -20,8 +20,8 @@ public:
         this->get_parameter("publish_rate", publish_rate_);
 
         // Ancho y alto a la mitad de la resolución estándar (640x480 -> 320x240)
-        width_ = 320;
-        height_ = 240;
+        width_ = 640;
+        height_ = 480;
 
         // Cargar y ajustar la calibración dinámicamente para 320x240
         if (!cargar_y_escalar_calibracion()) {
@@ -78,16 +78,21 @@ private:
             // AJUSTE MATEMÁTICO: Escalamos la matriz intrínseca a la mitad
             // fx = mtx.at<double>(0,0), fy = mtx.at<double>(1,1)
             // cx = mtx.at<double>(0,2), cy = mtx.at<double>(1,2)
-            mtx.at<double>(0, 0) /= 2.0; // fx
-            mtx.at<double>(1, 1) /= 2.0; // fy
-            mtx.at<double>(0, 2) /= 2.0; // cx
-            mtx.at<double>(1, 2) /= 2.0; // cy
+            // mtx.at<double>(0, 0) /= 2.0; // fx
+            // mtx.at<double>(1, 1) /= 2.0; // fy
+            // mtx.at<double>(0, 2) /= 2.0; // cx
+            // mtx.at<double>(1, 2) /= 2.0; // cy
 
             cv::Size new_image_size(width_, height_);
 
-            // Pre-calculamos los mapas geométricos usando el nuevo tamaño reducido
-            cv::Mat new_camera_mtx = cv::getOptimalNewCameraMatrix(mtx, dist, new_image_size, 0, new_image_size);
-            cv::initUndistortRectifyMap(mtx, dist, cv::Mat(), new_camera_mtx, new_image_size, CV_32FC1, mapx_, mapy_);
+            cv::Mat new_camera_mtx = cv::getOptimalNewCameraMatrix(
+                mtx, dist, new_image_size, 0, new_image_size
+            );
+
+            cv::initUndistortRectifyMap(
+                mtx, dist, cv::Mat(), new_camera_mtx,
+                new_image_size, CV_32FC1, mapx_, mapy_
+            );
             
             return true;
         }
