@@ -8,6 +8,7 @@ from rclpy.node import Node
 from cv_bridge import CvBridge
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image
+from std_msgs.msg import Float32MultiArray
 
 
 class LineFollowerNode(Node):
@@ -19,6 +20,9 @@ class LineFollowerNode(Node):
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
         self.declare_parameter('debug_image_topic', '/line_follower/debug_image')
         self.declare_parameter('mask_topic', '/line_follower/mask')
+        self.declare_parameter('status_topic', '/line_follower/status')
+        self.declare_parameter('publish_debug', False)
+        self.declare_parameter('debug_publish_rate', 3.0)
 
         # Detection mode: "brightness" or "hsv"
         self.declare_parameter('detection_mode', 'brightness')
@@ -68,6 +72,9 @@ class LineFollowerNode(Node):
         self.cmd_vel_topic = self.get_parameter('cmd_vel_topic').value
         self.debug_image_topic = self.get_parameter('debug_image_topic').value
         self.mask_topic = self.get_parameter('mask_topic').value
+        self.status_topic = self.get_parameter('status_topic').value
+        self.publish_debug = bool(self.get_parameter('publish_debug').value)
+        self.debug_publish_rate = max(0.0, float(self.get_parameter('debug_publish_rate').value))
 
         self.detection_mode = str(self.get_parameter('detection_mode').value)
 
@@ -115,10 +122,16 @@ class LineFollowerNode(Node):
         self.last_time = None
 
         self.bridge = CvBridge()
+        self.last_debug_pub_time = None
 
         self.cmd_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
-        self.debug_pub = self.create_publisher(Image, self.debug_image_topic, 10)
-        self.mask_pub = self.create_publisher(Image, self.mask_topic, 10)
+        self.status_pub = self.create_publisher(Float32MultiArray, self.status_topic, 10)
+
+        self.debug_pub = None
+        self.mask_pub = None
+        if self.publish_debug:
+            self.debug_pub = self.create_publisher(Image, self.debug_image_topic, 10)
+            self.mask_pub = self.create_publisher(Image, self.mask_topic, 10)
 
         self.image_sub = self.create_subscription(
             Image,
@@ -130,6 +143,10 @@ class LineFollowerNode(Node):
         self.get_logger().info('Line follower node started.')
         self.get_logger().info(f'Detection mode: {self.detection_mode}')
         self.get_logger().info(f'Subscribing: {self.image_topic}')
+        self.get_logger().info(f'Status topic: {self.status_topic}')
+        self.get_logger().info(
+            f'Debug images: {self.publish_debug} @ {self.debug_publish_rate:.1f} Hz'
+        )
         self.get_logger().info(f'Brightness threshold: {self.brightness_threshold}')
         self.get_logger().info(f'ROIs: {self.rois}')
         self.get_logger().info(
@@ -144,6 +161,53 @@ class LineFollowerNode(Node):
     def _parse_roi(self, values):
         y1, y2, x1, x2, weight = values
         return int(y1), int(y2), int(x1), int(x2), float(weight)
+
+    def _filter_status_code(self, status):
+        codes = {
+            'LOST': -1.0,
+            'RAW': 0.0,
+            'INIT': 1.0,
+            'FILT': 2.0,
+            'LIMIT': 3.0,
+        }
+        return codes.get(status, -2.0)
+
+    def _publish_status(
+        self,
+        detected,
+        raw_center_x,
+        filtered_center_x,
+        error_norm,
+        linear_x,
+        angular_z,
+        total_area,
+        roi_areas,
+        filter_status,
+        total_weight
+    ):
+        msg = Float32MultiArray()
+
+        padded_roi_areas = list(roi_areas)[:3]
+        while len(padded_roi_areas) < 3:
+            padded_roi_areas.append(0.0)
+
+        msg.data = [
+            1.0 if detected else 0.0,
+            float(raw_center_x),
+            float(filtered_center_x),
+            float(error_norm),
+            float(linear_x),
+            float(angular_z),
+            float(total_area),
+            float(padded_roi_areas[0]),
+            float(padded_roi_areas[1]),
+            float(padded_roi_areas[2]),
+            self._filter_status_code(filter_status),
+            float(total_weight),
+        ]
+
+        self.status_pub.publish(msg)
+
 
     def make_mask(self, frame):
         is_mono = len(frame.shape) == 2 or (len(frame.shape) == 3 and frame.shape[2] == 1)
@@ -225,6 +289,7 @@ class LineFollowerNode(Node):
         weighted_sum_x = 0.0
         total_weight = 0.0
         total_area = 0.0
+        roi_areas = [0.0 for _ in self.rois]
 
         image_center_x = w / 2.0
         expected_center_x = (
@@ -285,6 +350,7 @@ class LineFollowerNode(Node):
             weighted_sum_x += cx * weight
             total_weight += weight
             total_area += area
+            roi_areas[idx] = area
 
             cv2.circle(debug, (cx, cy), 5, (0, 0, 255), -1)
             cv2.putText(
@@ -379,6 +445,19 @@ class LineFollowerNode(Node):
             twist.linear.x = linear_x
             twist.angular.z = angular_z
 
+            self._publish_status(
+                True,
+                raw_line_center_x,
+                line_center_x,
+                error_norm,
+                linear_x,
+                angular_z,
+                total_area,
+                roi_areas,
+                center_filter_status,
+                total_weight
+            )
+
             self.last_error = control_error
             self.last_time = now
 
@@ -416,6 +495,19 @@ class LineFollowerNode(Node):
                 twist.linear.x = 0.0
                 twist.angular.z = 0.0
 
+            self._publish_status(
+                False,
+                -1.0,
+                self.filtered_center_x if self.filtered_center_x is not None else -1.0,
+                0.0,
+                twist.linear.x,
+                twist.angular.z,
+                0.0,
+                [0.0 for _ in self.rois],
+                'LOST',
+                0.0
+            )
+
             cv2.putText(
                 debug,
                 'LINE LOST',
@@ -427,6 +519,17 @@ class LineFollowerNode(Node):
             )
 
         self.cmd_pub.publish(twist)
+
+        if not self.publish_debug:
+            return
+
+        now_debug = self.get_clock().now().nanoseconds / 1e9
+        if self.debug_publish_rate > 0.0 and self.last_debug_pub_time is not None:
+            min_period = 1.0 / self.debug_publish_rate
+            if now_debug - self.last_debug_pub_time < min_period:
+                return
+
+        self.last_debug_pub_time = now_debug
 
         mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
         mask_msg.header = msg.header
