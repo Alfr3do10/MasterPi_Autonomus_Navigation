@@ -15,7 +15,7 @@ class LineFollowerNode(Node):
         super().__init__('line_follower_node')
 
         # Topics
-        self.declare_parameter('image_topic', '/camera/image_raw')
+        self.declare_parameter('image_topic', '/camera/image_gray')
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
         self.declare_parameter('debug_image_topic', '/line_follower/debug_image')
         self.declare_parameter('mask_topic', '/line_follower/mask')
@@ -145,9 +145,19 @@ class LineFollowerNode(Node):
         y1, y2, x1, x2, weight = values
         return int(y1), int(y2), int(x1), int(x2), float(weight)
 
-    def make_mask(self, frame_bgr):
+    def make_mask(self, frame):
+        is_mono = len(frame.shape) == 2 or (len(frame.shape) == 3 and frame.shape[2] == 1)
+
+        if is_mono:
+            mono_frame = frame if len(frame.shape) == 2 else frame[:, :, 0]
+        else:
+            mono_frame = None
+
         if self.detection_mode == 'brightness':
-            gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+            if is_mono:
+                gray = mono_frame
+            else:
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
             if self.blur_kernel > 1:
                 k = self.blur_kernel
@@ -163,6 +173,11 @@ class LineFollowerNode(Node):
             )
 
         else:
+            if is_mono:
+                frame_bgr = cv2.cvtColor(mono_frame, cv2.COLOR_GRAY2BGR)
+            else:
+                frame_bgr = frame
+
             hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
             lower = np.array([self.h_min, self.s_min, self.v_min], dtype=np.uint8)
             upper = np.array([self.h_max, self.s_max, self.v_max], dtype=np.uint8)
@@ -178,7 +193,7 @@ class LineFollowerNode(Node):
 
     def image_callback(self, msg):
         try:
-            frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
         except Exception as exc:
             self.get_logger().error(f'cv_bridge error: {exc}')
             return
@@ -200,7 +215,12 @@ class LineFollowerNode(Node):
 
             mask[y1:y2, x1:x2] = raw_mask[y1:y2, x1:x2]
 
-        debug = frame.copy()
+        if len(frame.shape) == 2:
+            debug = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+        elif len(frame.shape) == 3 and frame.shape[2] == 1:
+            debug = cv2.cvtColor(frame[:, :, 0], cv2.COLOR_GRAY2BGR)
+        else:
+            debug = frame.copy()
 
         weighted_sum_x = 0.0
         total_weight = 0.0
