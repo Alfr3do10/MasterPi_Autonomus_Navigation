@@ -55,6 +55,9 @@ class LineFollowerNode(Node):
         self.declare_parameter('slowdown_on_error', 0.25)
         self.declare_parameter('deadband_error', 0.03)
         self.declare_parameter('integral_limit', 0.40)
+        self.declare_parameter('use_center_filter', True)
+        self.declare_parameter('center_smoothing_alpha', 0.30)
+        self.declare_parameter('max_center_jump_px', 50.0)
 
         # Detection safety
         self.declare_parameter('min_contour_area', 40.0)
@@ -97,6 +100,9 @@ class LineFollowerNode(Node):
         self.slowdown_on_error = float(self.get_parameter('slowdown_on_error').value)
         self.deadband_error = float(self.get_parameter('deadband_error').value)
         self.integral_limit = float(self.get_parameter('integral_limit').value)
+        self.use_center_filter = bool(self.get_parameter('use_center_filter').value)
+        self.center_smoothing_alpha = float(self.get_parameter('center_smoothing_alpha').value)
+        self.max_center_jump_px = float(self.get_parameter('max_center_jump_px').value)
 
         self.min_contour_area = float(self.get_parameter('min_contour_area').value)
         self.search_when_lost = bool(self.get_parameter('search_when_lost').value)
@@ -105,6 +111,7 @@ class LineFollowerNode(Node):
         # PID state. Integral starts disabled when ki_angular is 0.0.
         self.integral_error = 0.0
         self.last_error = None
+        self.filtered_center_x = None
         self.last_time = None
 
         self.bridge = CvBridge()
@@ -199,6 +206,13 @@ class LineFollowerNode(Node):
         total_weight = 0.0
         total_area = 0.0
 
+        image_center_x = w / 2.0
+        expected_center_x = (
+            self.filtered_center_x
+            if self.use_center_filter and self.filtered_center_x is not None
+            else image_center_x
+        )
+
         for idx, (y1, y2, x1, x2, weight) in enumerate(self.rois):
             y1 = max(0, min(h - 1, y1))
             y2 = max(0, min(h, y2))
@@ -218,21 +232,35 @@ class LineFollowerNode(Node):
             if not contours:
                 continue
 
-            largest = max(contours, key=cv2.contourArea)
-            area = cv2.contourArea(largest)
+            contour_candidates = []
 
-            if area < self.min_contour_area:
+            for contour in contours:
+                area = cv2.contourArea(contour)
+
+                if area < self.min_contour_area:
+                    continue
+
+                moments = cv2.moments(contour)
+                if moments['m00'] == 0:
+                    continue
+
+                cx_local = int(moments['m10'] / moments['m00'])
+                cy_local = int(moments['m01'] / moments['m00'])
+
+                cx = x1 + cx_local
+                cy = y1 + cy_local
+
+                distance_to_expected = abs(cx - expected_center_x)
+
+                contour_candidates.append(
+                    (distance_to_expected, -area, area, cx, cy)
+                )
+
+            if not contour_candidates:
                 continue
 
-            moments = cv2.moments(largest)
-            if moments['m00'] == 0:
-                continue
-
-            cx_local = int(moments['m10'] / moments['m00'])
-            cy_local = int(moments['m01'] / moments['m00'])
-
-            cx = x1 + cx_local
-            cy = y1 + cy_local
+            contour_candidates.sort(key=lambda item: (item[0], item[1]))
+            _distance_to_expected, _negative_area, area, cx, cy = contour_candidates[0]
 
             weighted_sum_x += cx * weight
             total_weight += weight
@@ -252,8 +280,37 @@ class LineFollowerNode(Node):
         twist = Twist()
 
         if total_weight > 0.0:
-            line_center_x = weighted_sum_x / total_weight
-            image_center_x = w / 2.0
+            raw_line_center_x = weighted_sum_x / total_weight
+            line_center_x = raw_line_center_x
+            center_filter_status = 'RAW'
+
+            if self.use_center_filter:
+                if self.filtered_center_x is None:
+                    self.filtered_center_x = raw_line_center_x
+                    center_filter_status = 'INIT'
+                else:
+                    delta = raw_line_center_x - self.filtered_center_x
+                    limited = False
+                    candidate_center_x = raw_line_center_x
+
+                    if self.max_center_jump_px > 0.0 and abs(delta) > self.max_center_jump_px:
+                        candidate_center_x = (
+                            self.filtered_center_x + self.max_center_jump_px
+                            if delta > 0.0
+                            else self.filtered_center_x - self.max_center_jump_px
+                        )
+                        limited = True
+
+                    alpha = max(0.0, min(1.0, self.center_smoothing_alpha))
+                    self.filtered_center_x = (
+                        (1.0 - alpha) * self.filtered_center_x
+                        + alpha * candidate_center_x
+                    )
+
+                    center_filter_status = 'LIMIT' if limited else 'FILT'
+
+                line_center_x = self.filtered_center_x
+
             error_px = line_center_x - image_center_x
             error_norm = error_px / image_center_x
 
@@ -310,7 +367,7 @@ class LineFollowerNode(Node):
 
             cv2.putText(
                 debug,
-                f'CENTER={line_center_x:.1f} ERR={error_norm:.2f}',
+                f'RAW={raw_line_center_x:.1f} CENTER={line_center_x:.1f} ERR={error_norm:.2f} {center_filter_status}',
                 (10, 25),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,

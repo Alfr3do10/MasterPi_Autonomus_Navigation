@@ -39,6 +39,10 @@ line_follower_node:
     deadband_error: 0.04
     integral_limit: 0.00
 
+    use_center_filter: true
+    center_smoothing_alpha: 0.30
+    max_center_jump_px: 50.0
+
     min_contour_area: 40.0
     search_when_lost: false
     search_angular_speed: 0.40
