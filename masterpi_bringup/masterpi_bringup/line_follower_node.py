@@ -62,6 +62,8 @@ class LineFollowerNode(Node):
         self.declare_parameter('use_center_filter', True)
         self.declare_parameter('center_smoothing_alpha', 0.30)
         self.declare_parameter('max_center_jump_px', 50.0)
+        self.declare_parameter('low_confidence_weight_threshold', 0.95)
+        self.declare_parameter('low_confidence_angular_scale', 0.65)
 
         # Detection safety
         self.declare_parameter('min_contour_area', 40.0)
@@ -110,6 +112,8 @@ class LineFollowerNode(Node):
         self.use_center_filter = bool(self.get_parameter('use_center_filter').value)
         self.center_smoothing_alpha = float(self.get_parameter('center_smoothing_alpha').value)
         self.max_center_jump_px = float(self.get_parameter('max_center_jump_px').value)
+        self.low_confidence_weight_threshold = float(self.get_parameter('low_confidence_weight_threshold').value)
+        self.low_confidence_angular_scale = float(self.get_parameter('low_confidence_angular_scale').value)
 
         self.min_contour_area = float(self.get_parameter('min_contour_area').value)
         self.search_when_lost = bool(self.get_parameter('search_when_lost').value)
@@ -169,6 +173,7 @@ class LineFollowerNode(Node):
             'INIT': 1.0,
             'FILT': 2.0,
             'LIMIT': 3.0,
+            'LOW_WEIGHT': 4.0,
         }
         return codes.get(status, -2.0)
 
@@ -400,6 +405,8 @@ class LineFollowerNode(Node):
             error_px = line_center_x - image_center_x
             error_norm = error_px / image_center_x
 
+            confidence_status = center_filter_status
+
             if abs(error_norm) < self.deadband_error:
                 control_error = 0.0
             else:
@@ -438,6 +445,13 @@ class LineFollowerNode(Node):
             if control_error != 0.0 and 0.0 < abs(angular_z) < self.min_angular_speed:
                 angular_z = self.min_angular_speed if angular_z > 0.0 else -self.min_angular_speed
 
+            if (
+                self.low_confidence_weight_threshold > 0.0
+                and 0.0 < total_weight < self.low_confidence_weight_threshold
+            ):
+                angular_z *= self.low_confidence_angular_scale
+                confidence_status = 'LOW_WEIGHT'
+
             speed_factor = 1.0 - min(abs(control_error), 1.0) * self.slowdown_on_error
             linear_x = self.base_speed * speed_factor
             linear_x = max(self.min_linear_speed, min(self.max_linear_speed, linear_x))
@@ -454,7 +468,7 @@ class LineFollowerNode(Node):
                 angular_z,
                 total_area,
                 roi_areas,
-                center_filter_status,
+                confidence_status,
                 total_weight
             )
 
@@ -466,7 +480,7 @@ class LineFollowerNode(Node):
 
             cv2.putText(
                 debug,
-                f'RAW={raw_line_center_x:.1f} CENTER={line_center_x:.1f} ERR={error_norm:.2f} {center_filter_status}',
+                f'RAW={raw_line_center_x:.1f} CENTER={line_center_x:.1f} ERR={error_norm:.2f} {confidence_status}',
                 (10, 25),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
