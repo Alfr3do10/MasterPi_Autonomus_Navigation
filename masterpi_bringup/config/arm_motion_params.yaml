@@ -1,0 +1,63 @@
+arm_motion_node:
+  ros__parameters:
+    enable_motion: true
+    motion_name: carry_line_follower
+
+    use_mock_hardware: false
+    use_deviation: true
+
+    min_pulse: 500
+    max_pulse: 2500
+    default_move_time_ms: 1000
+    wait_after_pose_s: 0.25
+
+    # Lista de poses disponibles.
+    # Formato de cada pose:
+    # [servo_id, pulse, servo_id, pulse, ...]
+    pose_names:
+      - home
+      - pickup_ready
+      - pickup_down
+      - pickup_grab
+      - carry_line_follower
+      - drop_ready
+      - drop_down
+      - drop_release
+
+    motion_names:
+      - home
+      - carry_line_follower
+      - pickup
+      - drop
+
+    # Por seguridad, las poses nuevas empiezan iguales a carry_line_follower.
+    # Luego las calibramos una por una en la Raspberry.
+    pose_home: [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500]
+
+    pose_pickup_ready: [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500]
+    pose_pickup_down: [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500]
+    pose_pickup_grab: [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500]
+
+    pose_carry_line_follower: [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500]
+
+    pose_drop_ready: [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500]
+    pose_drop_down: [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500]
+    pose_drop_release: [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500]
+
+    sequence_home:
+      - home
+
+    sequence_carry_line_follower:
+      - carry_line_follower
+
+    sequence_pickup:
+      - pickup_ready
+      - pickup_down
+      - pickup_grab
+      - carry_line_follower
+
+    sequence_drop:
+      - drop_ready
+      - drop_down
+      - drop_release
+      - carry_line_follower
