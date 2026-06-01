@@ -46,8 +46,14 @@ class ArmMotionNode(Node):
         self.declare_parameter('default_move_time_ms', 1000)
         self.declare_parameter('wait_after_pose_s', 0.25)
 
+        # Calibration mode parameters.
+        # Used only when motion_name == "single_servo".
+        self.declare_parameter('single_servo_id', 1)
+        self.declare_parameter('single_servo_pulse', 1500)
+        self.declare_parameter('single_servo_move_time_ms', 400)
+
         self.declare_parameter('pose_names', list(DEFAULT_POSES.keys()))
-        self.declare_parameter('motion_names', list(DEFAULT_SEQUENCES.keys()))
+        self.declare_parameter('motion_names', list(DEFAULT_SEQUENCES.keys()) + ['single_servo'])
 
         self.enable_motion = bool(self.get_parameter('enable_motion').value)
         self.motion_name = str(self.get_parameter('motion_name').value)
@@ -60,6 +66,10 @@ class ArmMotionNode(Node):
         self.default_move_time_ms = int(self.get_parameter('default_move_time_ms').value)
         self.wait_after_pose_s = float(self.get_parameter('wait_after_pose_s').value)
 
+        self.single_servo_id = int(self.get_parameter('single_servo_id').value)
+        self.single_servo_pulse = int(self.get_parameter('single_servo_pulse').value)
+        self.single_servo_move_time_ms = int(self.get_parameter('single_servo_move_time_ms').value)
+
         self.pose_names = list(self.get_parameter('pose_names').value)
         self.motion_names = list(self.get_parameter('motion_names').value)
 
@@ -71,6 +81,9 @@ class ArmMotionNode(Node):
 
         self.sequences = {}
         for motion_name in self.motion_names:
+            if motion_name == 'single_servo':
+                continue
+
             default_sequence = DEFAULT_SEQUENCES.get(motion_name, [motion_name])
             self.declare_parameter(f'sequence_{motion_name}', default_sequence)
             self.sequences[motion_name] = list(self.get_parameter(f'sequence_{motion_name}').value)
@@ -114,6 +127,33 @@ class ArmMotionNode(Node):
 
         return servo_pairs
 
+    def send_single_servo(self, servo_id, raw_pulse, move_time_ms, deviation):
+        servo_id = int(servo_id)
+        raw_pulse = int(raw_pulse)
+        move_time_ms = int(move_time_ms)
+
+        offset = int(deviation.get(str(servo_id), 0))
+        final_pulse = self.clamp_pulse(raw_pulse + offset)
+
+        data = [move_time_ms, 1, servo_id, final_pulse]
+
+        self.get_logger().info('Running single servo calibration command:')
+        self.get_logger().info(
+            f'  servo {servo_id}: raw={raw_pulse}, deviation={offset}, final={final_pulse}, time_ms={move_time_ms}'
+        )
+
+        if self.use_mock_hardware:
+            self.get_logger().info(f'Mock mode: not sending hardware command. data={data}')
+            return
+
+        if Board is None:
+            self.get_logger().error('Board import failed. Cannot move servo.')
+            return
+
+        Board.setPWMServosPulse(data)
+        self.get_logger().info('Single servo command sent.')
+        time.sleep(move_time_ms / 1000.0)
+
     def send_pose(self, pose_name, raw_pose, deviation):
         servo_pairs = self.parse_pose(pose_name, raw_pose)
 
@@ -150,14 +190,25 @@ class ArmMotionNode(Node):
             self.get_logger().info('Arm motion disabled.')
             return
 
+        deviation = self.get_deviation()
+
+        if self.motion_name == 'single_servo':
+            self.send_single_servo(
+                self.single_servo_id,
+                self.single_servo_pulse,
+                self.single_servo_move_time_ms,
+                deviation
+            )
+            self.get_logger().info('Single servo calibration finished.')
+            return
+
         if self.motion_name not in self.sequences:
-            available = ', '.join(sorted(self.sequences.keys()))
+            available = ', '.join(sorted(list(self.sequences.keys()) + ['single_servo']))
             self.get_logger().error(
                 f'Unknown motion "{self.motion_name}". Available motions: {available}'
             )
             return
 
-        deviation = self.get_deviation()
         sequence = self.sequences[self.motion_name]
 
         self.get_logger().info(f'Running arm motion: {self.motion_name}')

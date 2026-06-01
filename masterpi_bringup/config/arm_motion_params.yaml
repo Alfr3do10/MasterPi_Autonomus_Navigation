@@ -11,6 +11,11 @@ arm_motion_node:
     default_move_time_ms: 1000
     wait_after_pose_s: 0.25
 
+    # Calibration mode. Used only with motion_name:=single_servo.
+    single_servo_id: 1
+    single_servo_pulse: 1500
+    single_servo_move_time_ms: 400
+
     # Lista de poses disponibles.
     # Formato de cada pose:
     # [servo_id, pulse, servo_id, pulse, ...]
@@ -29,6 +34,7 @@ arm_motion_node:
       - carry_line_follower
       - pickup
       - drop
+      - single_servo
 
     # Por seguridad, las poses nuevas empiezan iguales a carry_line_follower.
     # Luego las calibramos una por una en la Raspberry.
