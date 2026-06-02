@@ -11,7 +11,17 @@ arm_motion_node:
 
     # Movement speed for full arm poses.
     default_move_time_ms: 400
-    wait_after_pose_s: 0.20
+    wait_after_pose_s: 0.05
+
+    # Smooth interpolation for arm movement.
+    # The gripper servo is not interpolated and keeps its own speed.
+    use_interpolation: true
+    interpolation_steps: 6
+    interpolation_step_time_ms: 120
+    gripper_servo_id: 1
+    gripper_move_time_ms: 400
+    fixed_servo_id: 4
+    fixed_servo_pulse: 2265
 
     # Calibration mode. Used only with motion_name:=single_servo.
     single_servo_id: 1

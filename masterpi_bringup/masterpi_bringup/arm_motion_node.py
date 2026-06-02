@@ -13,21 +13,19 @@ except Exception:
 
 
 DEFAULT_POSES = {
-    'home': [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500],
-    'pickup_ready': [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500],
-    'pickup_down': [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500],
-    'pickup_grab': [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500],
-    'carry_line_follower': [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500],
-    'drop_ready': [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500],
-    'drop_down': [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500],
-    'drop_release': [1, 1500, 3, 500, 4, 2265, 5, 1080, 6, 1500],
+    'home': [1, 1800, 3, 500, 4, 2265, 5, 800, 6, 1500],
+    'carry_line_follower': [1, 1200, 3, 500, 4, 2265, 5, 1150, 6, 1500],
 }
 
 DEFAULT_SEQUENCES = {
     'home': ['home'],
     'carry_line_follower': ['carry_line_follower'],
-    'pickup': ['pickup_ready', 'pickup_down', 'pickup_grab', 'carry_line_follower'],
-    'drop': ['drop_ready', 'drop_down', 'drop_release', 'carry_line_follower'],
+    'pickup': ['pickup_start', 'pickup_rotate', 'pickup_extend', 'pickup_open',
+               'pickup_lower', 'pickup_grab', 'pickup_lift', 'pickup_contract',
+               'pickup_center', 'carry_line_follower'],
+    'drop': ['drop_rotate', 'drop_extend', 'drop_lower', 'drop_release',
+             'drop_lift', 'drop_contract', 'drop_center', 'drop_close',
+             'carry_line_follower'],
 }
 
 
@@ -43,11 +41,25 @@ class ArmMotionNode(Node):
 
         self.declare_parameter('min_pulse', 500)
         self.declare_parameter('max_pulse', 2500)
-        self.declare_parameter('default_move_time_ms', 1000)
-        self.declare_parameter('wait_after_pose_s', 0.25)
 
-        # Calibration mode parameters.
-        # Used only when motion_name == "single_servo".
+        # Direct pose speed. Also used as fallback.
+        self.declare_parameter('default_move_time_ms', 400)
+        self.declare_parameter('wait_after_pose_s', 0.05)
+
+        # Smooth interpolation for arm movement.
+        self.declare_parameter('use_interpolation', True)
+        self.declare_parameter('interpolation_steps', 6)
+        self.declare_parameter('interpolation_step_time_ms', 120)
+
+        # Gripper keeps its own speed and is not interpolated.
+        self.declare_parameter('gripper_servo_id', 1)
+        self.declare_parameter('gripper_move_time_ms', 400)
+
+        # Safety lock for damaged/fixed servo.
+        self.declare_parameter('fixed_servo_id', 4)
+        self.declare_parameter('fixed_servo_pulse', 2265)
+
+        # Calibration mode. Used only when motion_name == "single_servo".
         self.declare_parameter('single_servo_id', 1)
         self.declare_parameter('single_servo_pulse', 1500)
         self.declare_parameter('single_servo_move_time_ms', 400)
@@ -63,8 +75,19 @@ class ArmMotionNode(Node):
 
         self.min_pulse = int(self.get_parameter('min_pulse').value)
         self.max_pulse = int(self.get_parameter('max_pulse').value)
+
         self.default_move_time_ms = int(self.get_parameter('default_move_time_ms').value)
         self.wait_after_pose_s = float(self.get_parameter('wait_after_pose_s').value)
+
+        self.use_interpolation = bool(self.get_parameter('use_interpolation').value)
+        self.interpolation_steps = int(self.get_parameter('interpolation_steps').value)
+        self.interpolation_step_time_ms = int(self.get_parameter('interpolation_step_time_ms').value)
+
+        self.gripper_servo_id = int(self.get_parameter('gripper_servo_id').value)
+        self.gripper_move_time_ms = int(self.get_parameter('gripper_move_time_ms').value)
+
+        self.fixed_servo_id = int(self.get_parameter('fixed_servo_id').value)
+        self.fixed_servo_pulse = int(self.get_parameter('fixed_servo_pulse').value)
 
         self.single_servo_id = int(self.get_parameter('single_servo_id').value)
         self.single_servo_pulse = int(self.get_parameter('single_servo_pulse').value)
@@ -119,27 +142,65 @@ class ArmMotionNode(Node):
                 f'Pose "{pose_name}" has invalid format. Expected pairs: [servo_id, pulse, ...]'
             )
 
-        servo_pairs = []
+        pose = {}
         for index in range(0, len(raw_pose), 2):
             servo_id = int(raw_pose[index])
             pulse = int(raw_pose[index + 1])
-            servo_pairs.append((servo_id, pulse))
+            pose[servo_id] = pulse
 
-        return servo_pairs
+        # Safety: fixed servo must always stay fixed.
+        pose[self.fixed_servo_id] = self.fixed_servo_pulse
+        return pose
+
+    def apply_deviation(self, servo_id, raw_pulse, deviation):
+        # For the damaged/fixed servo, force the final output exactly.
+        if servo_id == self.fixed_servo_id:
+            return self.fixed_servo_pulse
+
+        offset = int(deviation.get(str(servo_id), 0))
+        return self.clamp_pulse(raw_pulse + offset)
+
+    def send_servo_dict(self, servo_dict, move_time_ms, deviation, label='servo command'):
+        if not servo_dict:
+            return
+
+        data = [int(move_time_ms), len(servo_dict)]
+
+        for servo_id in sorted(servo_dict.keys()):
+            raw_pulse = int(servo_dict[servo_id])
+            final_pulse = self.apply_deviation(servo_id, raw_pulse, deviation)
+            data.extend([servo_id, final_pulse])
+
+        self.get_logger().info(f'Sending {label}: {data}')
+
+        if self.use_mock_hardware:
+            self.get_logger().info('Mock mode: not sending hardware command.')
+            return
+
+        if Board is None:
+            self.get_logger().error('Board import failed. Cannot move servos.')
+            return
+
+        Board.setPWMServosPulse(data)
+        time.sleep(int(move_time_ms) / 1000.0)
 
     def send_single_servo(self, servo_id, raw_pulse, move_time_ms, deviation):
         servo_id = int(servo_id)
         raw_pulse = int(raw_pulse)
         move_time_ms = int(move_time_ms)
 
-        offset = int(deviation.get(str(servo_id), 0))
-        final_pulse = self.clamp_pulse(raw_pulse + offset)
+        if servo_id == self.fixed_servo_id and raw_pulse != self.fixed_servo_pulse:
+            self.get_logger().warn(
+                f'Servo {servo_id} is fixed. Forcing pulse {self.fixed_servo_pulse}.'
+            )
+            raw_pulse = self.fixed_servo_pulse
 
+        final_pulse = self.apply_deviation(servo_id, raw_pulse, deviation)
         data = [move_time_ms, 1, servo_id, final_pulse]
 
         self.get_logger().info('Running single servo calibration command:')
         self.get_logger().info(
-            f'  servo {servo_id}: raw={raw_pulse}, deviation={offset}, final={final_pulse}, time_ms={move_time_ms}'
+            f'  servo {servo_id}: raw={raw_pulse}, final={final_pulse}, time_ms={move_time_ms}'
         )
 
         if self.use_mock_hardware:
@@ -154,36 +215,80 @@ class ArmMotionNode(Node):
         self.get_logger().info('Single servo command sent.')
         time.sleep(move_time_ms / 1000.0)
 
-    def send_pose(self, pose_name, raw_pose, deviation):
-        servo_pairs = self.parse_pose(pose_name, raw_pose)
+    def smoothstep(self, value):
+        # Ease-in/ease-out curve for smoother motion.
+        return value * value * (3.0 - 2.0 * value)
 
-        data = [self.default_move_time_ms, len(servo_pairs)]
+    def interpolate_pose(self, previous_pose, target_pose, deviation, pose_name):
+        steps = max(1, self.interpolation_steps)
+        step_time_ms = max(20, self.interpolation_step_time_ms)
 
-        self.get_logger().info(f'Applying pose: {pose_name}')
+        arm_servo_ids = sorted(
+            servo_id for servo_id in target_pose.keys()
+            if servo_id != self.gripper_servo_id
+        )
 
-        for servo_id, raw_pulse in servo_pairs:
-            offset = int(deviation.get(str(servo_id), 0))
-            final_pulse = self.clamp_pulse(raw_pulse + offset)
+        gripper_changed = (
+            self.gripper_servo_id in target_pose and
+            previous_pose.get(self.gripper_servo_id) != target_pose.get(self.gripper_servo_id)
+        )
 
-            data.extend([servo_id, final_pulse])
+        arm_changed = any(
+            previous_pose.get(servo_id) != target_pose.get(servo_id)
+            for servo_id in arm_servo_ids
+        )
 
+        if arm_changed:
             self.get_logger().info(
-                f'  servo {servo_id}: raw={raw_pulse}, deviation={offset}, final={final_pulse}'
+                f'Interpolating arm movement to pose "{pose_name}" '
+                f'with {steps} steps, {step_time_ms} ms each.'
             )
 
-        if self.use_mock_hardware:
-            self.get_logger().info(f'Mock mode: not sending hardware command. data={data}')
-            return
+            for step in range(1, steps + 1):
+                ratio = self.smoothstep(step / steps)
+                interpolated = {}
 
-        if Board is None:
-            self.get_logger().error('Board import failed. Cannot move servos.')
-            return
+                for servo_id in arm_servo_ids:
+                    start = int(previous_pose.get(servo_id, target_pose[servo_id]))
+                    end = int(target_pose[servo_id])
 
-        Board.setPWMServosPulse(data)
-        self.get_logger().info(
-            f'Pose "{pose_name}" command sent. Waiting {self.default_move_time_ms} ms.'
+                    if servo_id == self.fixed_servo_id:
+                        pulse = self.fixed_servo_pulse
+                    else:
+                        pulse = int(round(start + (end - start) * ratio))
+
+                    interpolated[servo_id] = pulse
+
+                self.send_servo_dict(
+                    interpolated,
+                    step_time_ms,
+                    deviation,
+                    label=f'interpolation step {step}/{steps} for {pose_name}'
+                )
+
+        if gripper_changed:
+            self.get_logger().info(
+                f'Moving gripper for pose "{pose_name}" at fixed speed '
+                f'{self.gripper_move_time_ms} ms.'
+            )
+            self.send_servo_dict(
+                {self.gripper_servo_id: target_pose[self.gripper_servo_id]},
+                self.gripper_move_time_ms,
+                deviation,
+                label=f'gripper move for {pose_name}'
+            )
+
+        if not arm_changed and not gripper_changed:
+            self.get_logger().info(f'Pose "{pose_name}" already matches previous pose.')
+
+    def send_pose_direct(self, pose_name, target_pose, deviation):
+        self.get_logger().info(f'Applying first/direct pose: {pose_name}')
+        self.send_servo_dict(
+            target_pose,
+            self.default_move_time_ms,
+            deviation,
+            label=f'direct pose {pose_name}'
         )
-        time.sleep(self.default_move_time_ms / 1000.0)
 
     def run_motion(self):
         if not self.enable_motion:
@@ -213,6 +318,14 @@ class ArmMotionNode(Node):
 
         self.get_logger().info(f'Running arm motion: {self.motion_name}')
         self.get_logger().info(f'Sequence: {sequence}')
+        self.get_logger().info(
+            f'Interpolation: {self.use_interpolation}, '
+            f'steps={self.interpolation_steps}, '
+            f'step_time_ms={self.interpolation_step_time_ms}, '
+            f'gripper_time_ms={self.gripper_move_time_ms}'
+        )
+
+        previous_pose = None
 
         for pose_name in sequence:
             if pose_name not in self.poses:
@@ -222,7 +335,14 @@ class ArmMotionNode(Node):
                 )
                 return
 
-            self.send_pose(pose_name, self.poses[pose_name], deviation)
+            target_pose = self.parse_pose(pose_name, self.poses[pose_name])
+
+            if previous_pose is None or not self.use_interpolation:
+                self.send_pose_direct(pose_name, target_pose, deviation)
+            else:
+                self.interpolate_pose(previous_pose, target_pose, deviation, pose_name)
+
+            previous_pose = target_pose
             time.sleep(self.wait_after_pose_s)
 
         self.get_logger().info(f'Arm motion "{self.motion_name}" finished.')
