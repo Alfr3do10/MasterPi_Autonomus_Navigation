@@ -5,7 +5,7 @@ line_follower_node:
     debug_image_topic: /line_follower/debug_image
     mask_topic: /line_follower/mask
     status_topic: /line_follower/status
-    publish_debug: false
+    publish_debug: true
     debug_publish_rate: 3.0
 
     detection_mode: brightness
@@ -21,15 +21,15 @@ line_follower_node:
     s_max: 255
     v_max: 255
 
-    roi_1: [190.0, 280.0, 190.0, 450.0, 0.15]
-    roi_2: [264.0, 370.0, 160.0, 480.0, 0.30]
-    roi_3: [356.0, 472.0, 120.0, 520.0, 0.55]
+    roi_1: [135.0, 220.0, 210.0, 430.0, 0.45]
+    roi_2: [220.0, 310.0, 200.0, 440.0, 0.40]
+    roi_3: [310.0, 350.0, 230.0, 410.0, 0.15]
 
     base_speed: 0.13
 
     kp_angular: 0.80
     ki_angular: 0.00
-    kd_angular: 0.00
+    kd_angular: 0.05
 
     min_linear_speed: 0.13
     max_linear_speed: 0.13
@@ -45,7 +45,7 @@ line_follower_node:
     use_center_filter: true
     center_smoothing_alpha: 0.30
     max_center_jump_px: 50.0
-    low_confidence_weight_threshold: 0.95
+    low_confidence_weight_threshold: 0.70
     low_confidence_angular_scale: 0.65
 
     min_contour_area: 40.0
@@ -58,8 +58,8 @@ line_follower_pose_node:
     move_time_ms: 1000
     use_deviation: true
 
-    servo_1: 1500
+    servo_1: 1200
     servo_3: 500
     servo_4: 2265
-    servo_5: 1080
+    servo_5: 1150
     servo_6: 1500
