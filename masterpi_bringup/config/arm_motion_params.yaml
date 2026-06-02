@@ -1,0 +1,132 @@
+arm_motion_node:
+  ros__parameters:
+    enable_motion: true
+    motion_name: carry_line_follower
+
+    use_mock_hardware: false
+    use_deviation: true
+
+    min_pulse: 500
+    max_pulse: 2500
+
+    # Movement speed for full arm poses.
+    default_move_time_ms: 400
+    wait_after_pose_s: 0.20
+
+    # Calibration mode. Used only with motion_name:=single_servo.
+    single_servo_id: 1
+    single_servo_pulse: 1500
+    single_servo_move_time_ms: 400
+
+    # Servo map:
+    # servo 1 = gripper open/close
+    # servo 3 = arm extend/contract
+    # servo 4 = fixed servo, keep at 2265
+    # servo 5 = arm lower/lift
+    # servo 6 = arm rotation pickup/drop/center
+
+    # Calibrated values:
+    # gripper_closed_start = 1300
+    # gripper_open = 1800
+    # gripper_closed_object = 1200
+    # arm_contract = 500
+    # arm_extend = 1200
+    # servo_4_fixed = 2265
+    # arm_lift = 800
+    # arm_lower = 2100
+    # arm_carry = 1150
+    # pickup_side = 500
+    # center = 1500
+    # drop_side = 2500
+
+    pose_names:
+      - home
+      - pickup_start
+      - pickup_rotate
+      - pickup_extend
+      - pickup_open
+      - pickup_lower
+      - pickup_grab
+      - pickup_lift
+      - pickup_contract
+      - pickup_center
+      - carry_line_follower
+      - drop_rotate
+      - drop_extend
+      - drop_lower
+      - drop_release
+      - drop_lift
+      - drop_contract
+      - drop_center
+      - drop_close
+      - post_drop_line_follower
+
+    motion_names:
+      - home
+      - carry_line_follower
+      - pickup
+      - drop
+      - single_servo
+
+    # Format:
+    # [servo_id, pulse, servo_id, pulse, ...]
+
+    # Safe neutral position.
+    pose_home: [1, 1800, 3, 500, 4, 2265, 5, 800, 6, 1500]
+
+    # Pickup routine.
+    pose_pickup_start: [1, 1300, 3, 500, 4, 2265, 5, 800, 6, 1500]
+    pose_pickup_rotate: [1, 1300, 3, 500, 4, 2265, 5, 800, 6, 500]
+    pose_pickup_extend: [1, 1300, 3, 1200, 4, 2265, 5, 800, 6, 500]
+    pose_pickup_open: [1, 1800, 3, 1200, 4, 2265, 5, 800, 6, 500]
+    pose_pickup_lower: [1, 1800, 3, 1200, 4, 2265, 5, 2100, 6, 500]
+    pose_pickup_grab: [1, 1200, 3, 1200, 4, 2265, 5, 2100, 6, 500]
+    pose_pickup_lift: [1, 1200, 3, 1200, 4, 2265, 5, 800, 6, 500]
+    pose_pickup_contract: [1, 1200, 3, 500, 4, 2265, 5, 800, 6, 500]
+    pose_pickup_center: [1, 1200, 3, 500, 4, 2265, 5, 800, 6, 1500]
+
+    # Carry position after pickup:
+    # gripper closed with object, arm contracted, center rotation, better line view.
+    pose_carry_line_follower: [1, 1200, 3, 500, 4, 2265, 5, 1150, 6, 1500]
+
+    # Drop routine.
+    pose_drop_rotate: [1, 1200, 3, 500, 4, 2265, 5, 1150, 6, 2500]
+    pose_drop_extend: [1, 1200, 3, 1200, 4, 2265, 5, 1150, 6, 2500]
+    pose_drop_lower: [1, 1200, 3, 1200, 4, 2265, 5, 2100, 6, 2500]
+    pose_drop_release: [1, 1800, 3, 1200, 4, 2265, 5, 2100, 6, 2500]
+    pose_drop_lift: [1, 1800, 3, 1200, 4, 2265, 5, 800, 6, 2500]
+    pose_drop_contract: [1, 1800, 3, 500, 4, 2265, 5, 800, 6, 2500]
+    pose_drop_center: [1, 1800, 3, 500, 4, 2265, 5, 800, 6, 1500]
+    pose_drop_close: [1, 1200, 3, 500, 4, 2265, 5, 800, 6, 1500]
+
+    # Final neutral after dropping object.
+    pose_post_drop_line_follower: [1, 1200, 3, 500, 4, 2265, 5, 800, 6, 1500]
+
+    sequence_home:
+      - home
+
+    sequence_carry_line_follower:
+      - carry_line_follower
+
+    sequence_pickup:
+      - pickup_start
+      - pickup_rotate
+      - pickup_extend
+      - pickup_open
+      - pickup_lower
+      - pickup_grab
+      - pickup_lift
+      - pickup_contract
+      - pickup_center
+      - carry_line_follower
+
+    sequence_drop:
+      - drop_rotate
+      - drop_extend
+      - drop_lower
+      - drop_release
+      - drop_lift
+      - drop_contract
+      - drop_center
+      - drop_close
+      - post_drop_line_follower
