@@ -14,7 +14,15 @@ public:
     {
         // 1. Declarar y obtener parámetros de ROS 2
         this->declare_parameter<std::string>("frame_id", "camera_link");
+<<<<<<< Updated upstream
         this->declare_parameter<double>("publish_rate", 15.0); // ¡Ahora podemos subir a 30 FPS nativos!
+=======
+        this->declare_parameter<double>("publish_rate", 15.0); // Modificado a 15 Hz
+        this->declare_parameter<bool>("publish_color", false);
+        this->declare_parameter<bool>("publish_gray", true);
+        this->declare_parameter<std::string>("image_topic", "/camera/image_raw");
+        this->declare_parameter<std::string>("gray_topic", "/camera/image_gray");
+>>>>>>> Stashed changes
         
         this->get_parameter("frame_id", frame_id_);
         double publish_rate;
@@ -103,10 +111,13 @@ private:
             return;
         }
 
+<<<<<<< Updated upstream
         // Forzar tamaño por si el driver entrega otra resolución
         cv::resize(frame_raw, frame_raw, cv::Size(320, 240), 0, 0, cv::INTER_NEAREST);
 
         // ¡Aquí ocurre el milagro! El remap en C++ corre directo sobre la RAM optimizada
+=======
+>>>>>>> Stashed changes
         cv::remap(frame_raw, frame_rectificado, mapx_, mapy_, cv::INTER_LINEAR);
 
         // CÓDIGO NUEVO CORREGIDO

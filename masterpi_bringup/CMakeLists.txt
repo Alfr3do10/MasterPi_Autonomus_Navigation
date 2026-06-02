@@ -12,10 +12,12 @@ endif()
 # 1. BUSCAR DEPENDENCIAS DE ROS 2 Y SISTEMA
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(cv_bridge REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(image_transport REQUIRED)
-find_package(OpenCV REQUIRED) # OpenCV nativo para C++
+find_package(OpenCV REQUIRED)
+find_package(cv_bridge REQUIRED)# OpenCV nativo para C++
 
 # ==============================================================================
 # CONFIGURACIÓN DE C++ (NODO DE LA CÁMARA)
@@ -34,9 +36,30 @@ target_link_libraries(camera_node_cpp
   ${OpenCV_LIBRARIES}
 )
 
-# 4. Instalar el ejecutable de C++ en el directorio de paquetes de ROS 2
+# 3. Componente C++ para detección de ArUco
+add_library(aruco_detector_component SHARED src/aruco_detector_component.cpp)
+ament_target_dependencies(aruco_detector_component
+  rclcpp
+  rclcpp_components
+  sensor_msgs
+  std_msgs
+  cv_bridge
+  OpenCV
+)
+target_link_libraries(aruco_detector_component
+  PRIVATE
+  rclcpp::rclcpp
+  cv_bridge::cv_bridge
+  ${OpenCV_LIBRARIES}
+)
+rclcpp_components_register_node(aruco_detector_component
+  PLUGIN "masterpi_bringup::ArucoDetectorComponent"
+)
+
+# 4. Instalar los binarios y la librería de componente
 install(TARGETS
   camera_node_cpp
+  aruco_detector_component
   DESTINATION lib/${PROJECT_NAME}
 )
 
