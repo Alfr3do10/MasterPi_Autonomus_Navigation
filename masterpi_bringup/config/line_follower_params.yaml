@@ -58,8 +58,8 @@ line_follower_pose_node:
     move_time_ms: 1000
     use_deviation: true
 
-    servo_1: 1500
+    servo_1: 1200
     servo_3: 500
     servo_4: 2265
-    servo_5: 1080
+    servo_5: 1150
     servo_6: 1500

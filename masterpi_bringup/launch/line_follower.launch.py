@@ -18,12 +18,21 @@ def generate_launch_description():
         'line_follower_params.yaml'
     ])
 
-    line_follower_pose_node = Node(
+    arm_params = PathJoinSubstitution([
+        FindPackageShare('masterpi_bringup'),
+        'config',
+        'arm_motion_params.yaml'
+    ])
+
+    arm_carry_node = Node(
         package='masterpi_bringup',
-        executable='line_follower_pose_node.py',
-        name='line_follower_pose_node',
+        executable='arm_motion_node.py',
+        name='arm_motion_node',
         output='screen',
-        parameters=[line_params]
+        parameters=[
+            arm_params,
+            {'motion_name': 'carry_line_follower'}
+        ]
     )
 
     camera_node = Node(
@@ -51,7 +60,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        line_follower_pose_node,
+        arm_carry_node,
         TimerAction(period=1.2, actions=[camera_node]),
         TimerAction(period=2.0, actions=[line_follower_node]),
         TimerAction(period=2.5, actions=[motor_node]),
