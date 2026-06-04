@@ -1,0 +1,42 @@
+mission_manager_node:
+  ros__parameters:
+    # Mission control mode.
+    # For now, Enter simulates that ArUco detected the station.
+    manual_enter_trigger: true
+
+    # Optional topic trigger.
+    # This lets us simulate station arrival from another terminal too.
+    station_trigger_topic: /mission/station_trigger
+
+    # Topics controlled by the mission manager.
+    cmd_vel_topic: /cmd_vel
+    line_follower_enabled_topic: /line_follower/enabled
+
+    # Arm service.
+    arm_service_name: /arm/run_motion
+
+    # Initial cube state.
+    # false = robot starts without cube, so first station runs pickup.
+    # true  = robot starts with cube, so first station runs drop.
+    initial_has_cube: false
+
+    # Startup behavior.
+    set_carry_pose_on_start: true
+    enable_line_follower_on_start: true
+
+    # Stop timing before and after station actions.
+    stop_before_action_s: 0.50
+    stop_after_arm_action_s: 0.50
+    stop_after_turn_s: 0.50
+
+    # Approximate 180-degree turn.
+    # These values are calibrated experimentally because there are no wheel encoders.
+    turn_angular_speed: 1.0
+    turn_duration_s: 1.70
+    turn_direction: 1.0
+
+    # Command publish rate during timed maneuvers.
+    command_rate_hz: 20.0
+
+    # Service timeout.
+    arm_service_timeout_s: 10.0
