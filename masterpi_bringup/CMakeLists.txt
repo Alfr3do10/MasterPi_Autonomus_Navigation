@@ -36,7 +36,27 @@ target_link_libraries(camera_node_cpp
   ${OpenCV_LIBRARIES}
 )
 
-# 3. Componente C++ para detección de ArUco
+# 3. Componente C++ para la cámara
+add_library(camera_node_component SHARED src/camera_component.cpp)
+ament_target_dependencies(camera_node_component
+  rclcpp
+  rclcpp_components
+  sensor_msgs
+  cv_bridge
+  OpenCV
+)
+
+target_link_libraries(camera_node_component
+  rclcpp::rclcpp
+  cv_bridge::cv_bridge
+  ${OpenCV_LIBRARIES}
+)
+
+rclcpp_components_register_nodes(camera_node_component
+  PLUGIN "masterpi_bringup::CameraComponent"
+)
+
+# 4. Componente C++ para detección de ArUco
 add_library(aruco_detector_component SHARED src/aruco_detector_component.cpp)
 ament_target_dependencies(aruco_detector_component
   rclcpp
@@ -57,9 +77,10 @@ rclcpp_components_register_nodes(aruco_detector_component
   PLUGIN "masterpi_bringup::ArucoDetectorComponent"
 )
 
-# 4. Instalar los binarios y la librería de componente
+# 5. Instalar los binarios y la librería de componente
 install(TARGETS
   camera_node_cpp
+  camera_node_component
   aruco_detector_component
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
