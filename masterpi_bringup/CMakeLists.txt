@@ -52,7 +52,7 @@ target_link_libraries(aruco_detector_component
   cv_bridge::cv_bridge
   ${OpenCV_LIBRARIES}
 )
-rclcpp_components_register_node(TARGET aruco_detector_component
+rclcpp_components_register_node(aruco_detector_component
   PLUGIN "masterpi_bringup::ArucoDetectorComponent"
 )
 
