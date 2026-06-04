@@ -24,10 +24,10 @@ find_package(cv_bridge REQUIRED)# OpenCV nativo para C++
 # ==============================================================================
 
 # 2. Definir el ejecutable de C++ y su archivo fuente
-add_executable(camera_node_cpp src/camera_node.cpp)
+add_executable(camera_node_cpp src/camera_component.cpp)
 
 # 3. Vincular las librerías necesarias al ejecutable
-target_link_libraries(camera_node_cpp
+target_link_libraries(camera_component_cpp
   PRIVATE
   rclcpp::rclcpp
   cv_bridge::cv_bridge
