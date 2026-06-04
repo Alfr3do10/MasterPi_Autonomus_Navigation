@@ -53,7 +53,7 @@ target_link_libraries(aruco_detector_component
   ${OpenCV_LIBRARIES}
 )
 
-rclcpp_components_register_component(aruco_detector_component
+rclcpp_components_register_nodes(aruco_detector_component
   PLUGIN "masterpi_bringup::ArucoDetectorComponent"
 )
 
@@ -61,9 +61,10 @@ rclcpp_components_register_component(aruco_detector_component
 install(TARGETS
   camera_node_cpp
   aruco_detector_component
-  DESTINATION lib/${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
-
 # ==============================================================================
 # CONFIGURACIÓN DE PYTHON, LAUNCH Y CONFIGURACIONES (MANTENER LO EXISTENTE)
 # ==============================================================================
