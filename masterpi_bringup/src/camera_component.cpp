@@ -49,7 +49,10 @@ public:
         cap_.set(cv::CAP_PROP_FPS, 30);
 
         // 4. Configurar el publicador de imágenes
-        image_transport_ = std::make_unique<image_transport::ImageTransport>(shared_from_this());
+        // Pasamos una referencia al nodo base usando rclcpp::Node::shared_ptr de forma segura
+        image_transport_ = std::make_unique<image_transport::ImageTransport>(
+            rclcpp::Node::SharedPtr(this, [](rclcpp::Node*){} )
+        );
         image_pub_ = image_transport_->advertise("/camera/image_raw", 10);
 
         // 5. Crear el temporizador
