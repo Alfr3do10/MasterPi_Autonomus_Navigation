@@ -20,7 +20,7 @@ public:
     {
         // 1. Declarar y obtener parámetros de ROS 2
         this->declare_parameter<std::string>("frame_id", "camera_link");
-        this->declare_parameter<double>("publish_rate", 15.0);
+        this->declare_parameter<double>("publish_rate", 20.0);
         this->declare_parameter<bool>("publish_color", false);  
         this->declare_parameter<bool>("publish_gray", true);
         this->declare_parameter<std::string>("image_topic", "/camera/image_raw");
