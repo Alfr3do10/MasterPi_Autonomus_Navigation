@@ -59,7 +59,7 @@ public:
         auto interval = std::chrono::duration<double>(1.0 / publish_rate_);
         timer_ = this->create_wall_timer(interval, std::bind(&CameraComponent::publish_image, this));
 
-        RCLCPP_INFO(this->get_logger(), "Nodo de Cámara en Componente iniciado a %.1f FPS.", publish_rate);
+        RCLCPP_INFO(this->get_logger(), "Nodo de Cámara en Componente iniciado a %.1f FPS.", publish_rate_);
     }
 
     ~CameraComponent() override
