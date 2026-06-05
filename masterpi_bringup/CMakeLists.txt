@@ -13,36 +13,58 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(cv_bridge REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(image_transport REQUIRED)
-find_package(OpenCV REQUIRED) # OpenCV nativo para C++
+find_package(OpenCV REQUIRED)
+find_package(cv_bridge REQUIRED)
 
 # ==============================================================================
-# CONFIGURACIÓN DE C++ (NODO DE LA CÁMARA)
+# CONFIGURACIÓN DE C++ (COMPONENTES)
 # ==============================================================================
 
-# 2. Definir el ejecutable de C++ y su archivo fuente
-add_executable(camera_node_cpp src/camera_node.cpp)
-
-# 3. Vincular las librerías necesarias al ejecutable
-target_link_libraries(camera_node_cpp
-  PRIVATE
-  rclcpp::rclcpp
-  cv_bridge::cv_bridge
-  image_transport::image_transport
-  ${sensor_msgs_LIBRARIES}
-  ${OpenCV_LIBRARIES}
+# 2. Componente C++ para la cámara
+add_library(camera_node_component SHARED src/camera_component.cpp)
+ament_target_dependencies(camera_node_component
+  rclcpp
+  rclcpp_components
+  sensor_msgs
+  image_transport
+  cv_bridge
+  OpenCV
 )
 
-# 4. Instalar el ejecutable de C++ en el directorio de paquetes de ROS 2
+rclcpp_components_register_nodes(camera_node_component
+  PLUGIN "masterpi_bringup::CameraComponent"
+)
+
+# 3. Componente C++ para detección de ArUco
+add_library(aruco_detector_component SHARED src/aruco_detector_component.cpp)
+ament_target_dependencies(aruco_detector_component
+  rclcpp
+  rclcpp_components
+  sensor_msgs
+  std_msgs
+  cv_bridge
+  OpenCV
+)
+
+rclcpp_components_register_nodes(aruco_detector_component
+  PLUGIN "masterpi_bringup::ArucoDetectorComponent"
+)
+
+# 4. Instalar las librerías de componentes
 install(TARGETS
-  camera_node_cpp
-  DESTINATION lib/${PROJECT_NAME}
+  camera_node_component
+  aruco_detector_component
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
 # ==============================================================================
-# CONFIGURACIÓN DE PYTHON, LAUNCH Y CONFIGURACIONES (MANTENER LO EXISTENTE)
+# CONFIGURACIÓN DE PYTHON, LAUNCH Y CONFIGURACIONES
 # ==============================================================================
 
 # 5. Instalar carpetas de recursos, configuraciones y archivos launch
@@ -51,8 +73,7 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
-# 6. Instalar tus scripts de Python existentes para que ROS 2 los pueda ejecutar
-# (Asumiendo que tus scripts ejecutables de Python están dentro de 'masterpi_bringup/')
+# 6. Instalar tus scripts de Python existentes
 install(
   PROGRAMS
   masterpi_bringup/__init__.py
@@ -66,8 +87,6 @@ install(
   masterpi_bringup/odom_node.py
   masterpi_bringup/servo_node.py
   masterpi_bringup/sonar_node.py
-  # Añade aquí abajo los nombres de los otros scripts .py que quieras ejecutar como nodos
-  # Ejemplo: masterpi_bringup/otro_nodo.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
