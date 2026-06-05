@@ -1,0 +1,7 @@
+string motion_name
+int32 servo_id
+int32 pulse
+int32 move_time_ms
+---
+bool success
+string message

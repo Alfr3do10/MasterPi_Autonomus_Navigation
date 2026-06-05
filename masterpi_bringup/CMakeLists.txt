@@ -1,24 +1,46 @@
 cmake_minimum_required(VERSION 3.8)
 project(masterpi_bringup)
 
-# Buscar estándares de C++
+# ==============================================================================
+# CONFIGURACIÓN GENERAL
+# ==============================================================================
+
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# 1. BUSCAR DEPENDENCIAS DE ROS 2 Y SISTEMA
+# ==============================================================================
+# DEPENDENCIAS
+# ==============================================================================
+
 find_package(ament_cmake REQUIRED)
-find_package(ament_cmake_python REQUIRED)
+
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
+find_package(rclpy REQUIRED)
+
+find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+
+find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(cv_bridge REQUIRED)
+
+find_package(rosidl_default_generators REQUIRED)
+
+# ==============================================================================
+# INTERFACES ROS 2
+# ==============================================================================
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "srv/RunArmMotion.srv"
+)
 
 # ==============================================================================
 # CONFIGURACIÓN DE C++ (COMPONENTES)
@@ -67,31 +89,57 @@ install(TARGETS
 # CONFIGURACIÓN DE PYTHON, LAUNCH Y CONFIGURACIONES
 # ==============================================================================
 
-# 5. Instalar carpetas de recursos, configuraciones y archivos launch
 install(
-  DIRECTORY config launch actions resource
+  DIRECTORY
+    config
+    launch
+    actions
+    resource
   DESTINATION share/${PROJECT_NAME}
 )
 
-# 6. Instalar tus scripts de Python existentes
+# ==============================================================================
+# SDK HIWONDER
+# ==============================================================================
+# Install Hiwonder SDK next to the Python executables.
+install(
+  DIRECTORY masterpi_bringup/hiwonder_sdk
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install Hiwonder SDK inside the generated Python package too.
+# Board.py imports:
+#   from masterpi_bringup.hiwonder_sdk import yaml_handle
+# so the SDK must also exist under Python site-packages/masterpi_bringup/.
+install(
+  DIRECTORY masterpi_bringup/hiwonder_sdk
+  DESTINATION local/lib/python3.10/dist-packages/${PROJECT_NAME}
+)
+# ==============================================================================
+# NODOS PYTHON EJECUTABLES
+# ==============================================================================
+
 install(
   PROGRAMS
-  masterpi_bringup/__init__.py
-  masterpi_bringup/camera_node.py
-  masterpi_bringup/line_follower_node.py
-  masterpi_bringup/line_follower_pose_node.py
-  masterpi_bringup/arm_motion_node.py
-  masterpi_bringup/aruco.py
-  masterpi_bringup/battery_node.py
-  masterpi_bringup/motor_node.py
-  masterpi_bringup/odom_node.py
-  masterpi_bringup/servo_node.py
-  masterpi_bringup/sonar_node.py
+    masterpi_bringup/line_follower_node.py
+    masterpi_bringup/line_follower_pose_node.py
+    masterpi_bringup/arm_motion_node.py
+    masterpi_bringup/arm_motion_service_node.py
+    masterpi_bringup/mission_manager_node.py
+    masterpi_bringup/station_maneuver_node.py
+    masterpi_bringup/aruco.py
+    masterpi_bringup/battery_node.py
+    masterpi_bringup/motor_node.py
+    masterpi_bringup/odom_node.py
+    masterpi_bringup/servo_node.py
+    masterpi_bringup/sonar_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 # ==============================================================================
-# CIERRE DE PAQUETE
+# EXPORTS
 # ==============================================================================
-ament_python_install_package(${PROJECT_NAME})
+
+ament_export_dependencies(rosidl_default_runtime)
+
 ament_package()
