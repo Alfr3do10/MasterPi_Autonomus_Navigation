@@ -1,31 +1,52 @@
 cmake_minimum_required(VERSION 3.8)
 project(masterpi_bringup)
 
-# Buscar estándares de C++
+# ==============================================================================
+# CONFIGURACIÓN GENERAL
+# ==============================================================================
+
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# 1. BUSCAR DEPENDENCIAS DE ROS 2 Y SISTEMA
+# ==============================================================================
+# DEPENDENCIAS
+# ==============================================================================
+
 find_package(ament_cmake REQUIRED)
-find_package(ament_cmake_python REQUIRED)
+
 find_package(rclcpp REQUIRED)
+find_package(rclpy REQUIRED)
+
+find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
-find_package(OpenCV REQUIRED) # OpenCV nativo para C++
+find_package(OpenCV REQUIRED)
+
+find_package(rosidl_default_generators REQUIRED)
 
 # ==============================================================================
-# CONFIGURACIÓN DE C++ (NODO DE LA CÁMARA)
+# INTERFACES ROS 2
 # ==============================================================================
 
-# 2. Definir el ejecutable de C++ y su archivo fuente
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "srv/RunArmMotion.srv"
+)
+
+# ==============================================================================
+# NODO C++ DE CÁMARA
+# ==============================================================================
+
 add_executable(camera_node_cpp src/camera_node.cpp)
 
-# 3. Vincular las librerías necesarias al ejecutable
 target_link_libraries(camera_node_cpp
   PRIVATE
   rclcpp::rclcpp
@@ -35,44 +56,62 @@ target_link_libraries(camera_node_cpp
   ${OpenCV_LIBRARIES}
 )
 
-# 4. Instalar el ejecutable de C++ en el directorio de paquetes de ROS 2
 install(TARGETS
   camera_node_cpp
   DESTINATION lib/${PROJECT_NAME}
 )
 
 # ==============================================================================
-# CONFIGURACIÓN DE PYTHON, LAUNCH Y CONFIGURACIONES (MANTENER LO EXISTENTE)
+# ARCHIVOS DE CONFIGURACIÓN, LAUNCH Y RECURSOS
 # ==============================================================================
 
-# 5. Instalar carpetas de recursos, configuraciones y archivos launch
 install(
-  DIRECTORY config launch actions resource
+  DIRECTORY
+    config
+    launch
+    actions
+    resource
   DESTINATION share/${PROJECT_NAME}
 )
 
-# 6. Instalar tus scripts de Python existentes para que ROS 2 los pueda ejecutar
-# (Asumiendo que tus scripts ejecutables de Python están dentro de 'masterpi_bringup/')
+# ==============================================================================
+# SDK HIWONDER
+# ==============================================================================
+# Lo instalamos junto a los ejecutables Python en lib/masterpi_bringup.
+# Así los nodos pueden usar:
+#   from hiwonder_sdk import Board, yaml_handle
+# sin interferir con el paquete generado masterpi_bringup.srv.
+
 install(
-  PROGRAMS
-  masterpi_bringup/__init__.py
-  masterpi_bringup/camera_node.py
-  masterpi_bringup/line_follower_node.py
-  masterpi_bringup/line_follower_pose_node.py
-  masterpi_bringup/arm_motion_node.py
-  masterpi_bringup/aruco.py
-  masterpi_bringup/battery_node.py
-  masterpi_bringup/motor_node.py
-  masterpi_bringup/odom_node.py
-  masterpi_bringup/servo_node.py
-  masterpi_bringup/sonar_node.py
-  # Añade aquí abajo los nombres de los otros scripts .py que quieras ejecutar como nodos
-  # Ejemplo: masterpi_bringup/otro_nodo.py
+  DIRECTORY masterpi_bringup/hiwonder_sdk
   DESTINATION lib/${PROJECT_NAME}
 )
 
 # ==============================================================================
-# CIERRE DE PAQUETE
+# NODOS PYTHON EJECUTABLES
 # ==============================================================================
-ament_python_install_package(${PROJECT_NAME})
+
+install(
+  PROGRAMS
+    masterpi_bringup/line_follower_node.py
+    masterpi_bringup/line_follower_pose_node.py
+    masterpi_bringup/arm_motion_node.py
+    masterpi_bringup/arm_motion_service_node.py
+    masterpi_bringup/mission_manager_node.py
+    masterpi_bringup/station_maneuver_node.py
+    masterpi_bringup/aruco.py
+    masterpi_bringup/battery_node.py
+    masterpi_bringup/motor_node.py
+    masterpi_bringup/odom_node.py
+    masterpi_bringup/servo_node.py
+    masterpi_bringup/sonar_node.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# ==============================================================================
+# EXPORTS
+# ==============================================================================
+
+ament_export_dependencies(rosidl_default_runtime)
+
 ament_package()

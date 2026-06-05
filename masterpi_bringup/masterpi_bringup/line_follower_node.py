@@ -8,7 +8,7 @@ from rclpy.node import Node
 from cv_bridge import CvBridge
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Bool, Float32MultiArray
 
 
 class LineFollowerNode(Node):
@@ -21,6 +21,8 @@ class LineFollowerNode(Node):
         self.declare_parameter('debug_image_topic', '/line_follower/debug_image')
         self.declare_parameter('mask_topic', '/line_follower/mask')
         self.declare_parameter('status_topic', '/line_follower/status')
+        self.declare_parameter('enabled_topic', '/line_follower/enabled')
+        self.declare_parameter('start_enabled', True)
         self.declare_parameter('publish_debug', False)
         self.declare_parameter('debug_publish_rate', 3.0)
 
@@ -41,7 +43,6 @@ class LineFollowerNode(Node):
         self.declare_parameter('v_max', 255)
 
         # ROI format: [y1, y2, x1, x2, weight]
-        # For 320x240 image, centered region
         self.declare_parameter('roi_1', [105.0, 130.0, 80.0, 240.0, 0.15])
         self.declare_parameter('roi_2', [145.0, 175.0, 80.0, 240.0, 0.30])
         self.declare_parameter('roi_3', [190.0, 235.0, 80.0, 240.0, 0.55])
@@ -75,6 +76,8 @@ class LineFollowerNode(Node):
         self.debug_image_topic = self.get_parameter('debug_image_topic').value
         self.mask_topic = self.get_parameter('mask_topic').value
         self.status_topic = self.get_parameter('status_topic').value
+        self.enabled_topic = self.get_parameter('enabled_topic').value
+        self.enabled = bool(self.get_parameter('start_enabled').value)
         self.publish_debug = bool(self.get_parameter('publish_debug').value)
         self.debug_publish_rate = max(0.0, float(self.get_parameter('debug_publish_rate').value))
 
@@ -119,7 +122,7 @@ class LineFollowerNode(Node):
         self.search_when_lost = bool(self.get_parameter('search_when_lost').value)
         self.search_angular_speed = float(self.get_parameter('search_angular_speed').value)
 
-        # PID state. Integral starts disabled when ki_angular is 0.0.
+        # PID state
         self.integral_error = 0.0
         self.last_error = None
         self.filtered_center_x = None
@@ -133,9 +136,17 @@ class LineFollowerNode(Node):
 
         self.debug_pub = None
         self.mask_pub = None
+
         if self.publish_debug:
             self.debug_pub = self.create_publisher(Image, self.debug_image_topic, 10)
             self.mask_pub = self.create_publisher(Image, self.mask_topic, 10)
+
+        self.enabled_sub = self.create_subscription(
+            Bool,
+            self.enabled_topic,
+            self.enabled_callback,
+            10
+        )
 
         self.image_sub = self.create_subscription(
             Image,
@@ -146,8 +157,10 @@ class LineFollowerNode(Node):
 
         self.get_logger().info('Line follower node started.')
         self.get_logger().info(f'Detection mode: {self.detection_mode}')
-        self.get_logger().info(f'Subscribing: {self.image_topic}')
+        self.get_logger().info(f'Subscribing image: {self.image_topic}')
+        self.get_logger().info(f'Publishing cmd_vel: {self.cmd_vel_topic}')
         self.get_logger().info(f'Status topic: {self.status_topic}')
+        self.get_logger().info(f'Enabled topic: {self.enabled_topic} | start_enabled={self.enabled}')
         self.get_logger().info(
             f'Debug images: {self.publish_debug} @ {self.debug_publish_rate:.1f} Hz'
         )
@@ -174,6 +187,7 @@ class LineFollowerNode(Node):
             'FILT': 2.0,
             'LIMIT': 3.0,
             'LOW_WEIGHT': 4.0,
+            'DISABLED': 5.0,
         }
         return codes.get(status, -2.0)
 
@@ -193,6 +207,7 @@ class LineFollowerNode(Node):
         msg = Float32MultiArray()
 
         padded_roi_areas = list(roi_areas)[:3]
+
         while len(padded_roi_areas) < 3:
             padded_roi_areas.append(0.0)
 
@@ -209,13 +224,32 @@ class LineFollowerNode(Node):
             float(padded_roi_areas[2]),
             self._filter_status_code(filter_status),
             float(total_weight),
+            1.0 if self.enabled else 0.0,
         ]
 
         self.status_pub.publish(msg)
 
+    def enabled_callback(self, msg):
+        previous_enabled = self.enabled
+        self.enabled = bool(msg.data)
+
+        if self.enabled != previous_enabled:
+            state = 'enabled' if self.enabled else 'disabled'
+            self.get_logger().info(f'Line follower {state} from {self.enabled_topic}.')
+
+        if not self.enabled:
+            self._reset_controller_state()
+            self.cmd_pub.publish(Twist())
+
+    def _reset_controller_state(self):
+        self.integral_error = 0.0
+        self.last_error = None
+        self.last_time = None
 
     def make_mask(self, frame):
-        is_mono = len(frame.shape) == 2 or (len(frame.shape) == 3 and frame.shape[2] == 1)
+        is_mono = len(frame.shape) == 2 or (
+            len(frame.shape) == 3 and frame.shape[2] == 1
+        )
 
         if is_mono:
             mono_frame = frame if len(frame.shape) == 2 else frame[:, :, 0]
@@ -230,8 +264,10 @@ class LineFollowerNode(Node):
 
             if self.blur_kernel > 1:
                 k = self.blur_kernel
+
                 if k % 2 == 0:
                     k += 1
+
                 gray = cv2.GaussianBlur(gray, (k, k), 0)
 
             _, mask = cv2.threshold(
@@ -272,8 +308,7 @@ class LineFollowerNode(Node):
         raw_mask = self.make_mask(frame)
 
         # Only keep the binary mask inside the configured ROIs.
-        # This makes /line_follower/mask easier to debug and prevents
-        # bright reflections outside the useful region from being considered.
+        # This prevents reflections outside the useful region from affecting detection.
         mask = np.zeros_like(raw_mask)
 
         for y1, y2, x1, x2, _weight in self.rois:
@@ -331,6 +366,7 @@ class LineFollowerNode(Node):
                     continue
 
                 moments = cv2.moments(contour)
+
                 if moments['m00'] == 0:
                     continue
 
@@ -384,7 +420,10 @@ class LineFollowerNode(Node):
                     limited = False
                     candidate_center_x = raw_line_center_x
 
-                    if self.max_center_jump_px > 0.0 and abs(delta) > self.max_center_jump_px:
+                    if (
+                        self.max_center_jump_px > 0.0
+                        and abs(delta) > self.max_center_jump_px
+                    ):
                         candidate_center_x = (
                             self.filtered_center_x + self.max_center_jump_px
                             if delta > 0.0
@@ -413,6 +452,7 @@ class LineFollowerNode(Node):
                 control_error = error_norm
 
             now = self.get_clock().now().nanoseconds / 1e9
+
             if self.last_time is None:
                 dt = 0.0
             else:
@@ -440,10 +480,20 @@ class LineFollowerNode(Node):
             )
 
             angular_z = self.angular_sign * pid_output
-            angular_z = max(-self.max_angular_speed, min(self.max_angular_speed, angular_z))
+            angular_z = max(
+                -self.max_angular_speed,
+                min(self.max_angular_speed, angular_z)
+            )
 
-            if control_error != 0.0 and 0.0 < abs(angular_z) < self.min_angular_speed:
-                angular_z = self.min_angular_speed if angular_z > 0.0 else -self.min_angular_speed
+            if (
+                control_error != 0.0
+                and 0.0 < abs(angular_z) < self.min_angular_speed
+            ):
+                angular_z = (
+                    self.min_angular_speed
+                    if angular_z > 0.0
+                    else -self.min_angular_speed
+                )
 
             if (
                 self.low_confidence_weight_threshold > 0.0
@@ -452,35 +502,41 @@ class LineFollowerNode(Node):
                 angular_z *= self.low_confidence_angular_scale
                 confidence_status = 'LOW_WEIGHT'
 
-            speed_factor = 1.0 - min(abs(control_error), 1.0) * self.slowdown_on_error
+            speed_factor = (
+                1.0 - min(abs(control_error), 1.0) * self.slowdown_on_error
+            )
+
             linear_x = self.base_speed * speed_factor
-            linear_x = max(self.min_linear_speed, min(self.max_linear_speed, linear_x))
+            linear_x = max(
+                self.min_linear_speed,
+                min(self.max_linear_speed, linear_x)
+            )
 
             twist.linear.x = linear_x
             twist.angular.z = angular_z
 
-            self._publish_status(
-                True,
-                raw_line_center_x,
-                line_center_x,
-                error_norm,
-                linear_x,
-                angular_z,
-                total_area,
-                roi_areas,
-                confidence_status,
-                total_weight
-            )
-
             self.last_error = control_error
             self.last_time = now
 
-            cv2.line(debug, (int(image_center_x), 0), (int(image_center_x), h), (255, 0, 0), 1)
-            cv2.circle(debug, (int(line_center_x), int(h * 0.85)), 7, (0, 255, 0), -1)
+            cv2.line(
+                debug,
+                (int(image_center_x), 0),
+                (int(image_center_x), h),
+                (255, 0, 0),
+                1
+            )
+            cv2.circle(
+                debug,
+                (int(line_center_x), int(h * 0.85)),
+                7,
+                (0, 255, 0),
+                -1
+            )
 
             cv2.putText(
                 debug,
-                f'RAW={raw_line_center_x:.1f} CENTER={line_center_x:.1f} ERR={error_norm:.2f} {confidence_status}',
+                f'RAW={raw_line_center_x:.1f} CENTER={line_center_x:.1f} '
+                f'ERR={error_norm:.2f} {confidence_status}',
                 (10, 25),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
@@ -498,29 +554,23 @@ class LineFollowerNode(Node):
                 2
             )
 
+            detected = True
+            status_raw_center_x = raw_line_center_x
+            status_filtered_center_x = line_center_x
+            status_error_norm = error_norm
+            status_linear_x = linear_x
+            status_angular_z = angular_z
+            status_filter = confidence_status
+            status_total_weight = total_weight
+
         else:
-            self.integral_error = 0.0
-            self.last_error = None
-            self.last_time = None
+            self._reset_controller_state()
 
             if self.search_when_lost:
                 twist.angular.z = self.search_angular_speed
             else:
                 twist.linear.x = 0.0
                 twist.angular.z = 0.0
-
-            self._publish_status(
-                False,
-                -1.0,
-                self.filtered_center_x if self.filtered_center_x is not None else -1.0,
-                0.0,
-                twist.linear.x,
-                twist.angular.z,
-                0.0,
-                [0.0 for _ in self.rois],
-                'LOST',
-                0.0
-            )
 
             cv2.putText(
                 debug,
@@ -532,14 +582,60 @@ class LineFollowerNode(Node):
                 2
             )
 
+            detected = False
+            status_raw_center_x = -1.0
+            status_filtered_center_x = (
+                self.filtered_center_x
+                if self.filtered_center_x is not None
+                else -1.0
+            )
+            status_error_norm = 0.0
+            status_linear_x = twist.linear.x
+            status_angular_z = twist.angular.z
+            status_filter = 'LOST'
+            status_total_weight = 0.0
+
+        if not self.enabled:
+            self._reset_controller_state()
+            twist = Twist()
+
+            status_linear_x = 0.0
+            status_angular_z = 0.0
+            status_filter = 'DISABLED'
+
+            cv2.putText(
+                debug,
+                'LINE FOLLOWER DISABLED',
+                (10, 70),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 165, 255),
+                2
+            )
+
+        self._publish_status(
+            detected,
+            status_raw_center_x,
+            status_filtered_center_x,
+            status_error_norm,
+            status_linear_x,
+            status_angular_z,
+            total_area,
+            roi_areas,
+            status_filter,
+            status_total_weight
+        )
+
         self.cmd_pub.publish(twist)
 
         if not self.publish_debug:
             return
 
         now_debug = self.get_clock().now().nanoseconds / 1e9
+
         if self.debug_publish_rate > 0.0 and self.last_debug_pub_time is not None:
             min_period = 1.0 / self.debug_publish_rate
+
             if now_debug - self.last_debug_pub_time < min_period:
                 return
 
