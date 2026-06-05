@@ -31,12 +31,12 @@ mission_manager_node:
 
     # Approximate 180-degree turn.
     # These values are calibrated experimentally because there are no wheel encoders.
-    turn_angular_speed: 1.0
-    turn_duration_s: 1.70
+    turn_angular_speed: 1.2
+    turn_duration_s: 1.8
     turn_direction: 1.0
 
     # Command publish rate during timed maneuvers.
     command_rate_hz: 20.0
 
     # Service timeout.
-    arm_service_timeout_s: 10.0
+    arm_service_timeout_s: 20.0

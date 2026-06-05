@@ -9,15 +9,15 @@ arm_motion_service_node:
     min_pulse: 500
     max_pulse: 2500
 
-    default_move_time_ms: 400
-    wait_after_pose_s: 0.05
+    default_move_time_ms: 500
+    wait_after_pose_s: 0.08
 
     use_interpolation: true
     interpolation_steps: 6
-    interpolation_step_time_ms: 120
+    interpolation_step_time_ms: 160
 
     gripper_servo_id: 1
-    gripper_move_time_ms: 400
+    gripper_move_time_ms: 500
 
     fixed_servo_id: 4
     fixed_servo_pulse: 2265
@@ -69,7 +69,7 @@ arm_motion_service_node:
     pose_pickup_start: [1, 1300, 3, 500, 4, 2265, 5, 800, 6, 1500]
     pose_pickup_rotate: [1, 1300, 3, 500, 4, 2265, 5, 800, 6, 500]
     pose_pickup_extend: [1, 1300, 3, 1200, 4, 2265, 5, 800, 6, 500]
-    pose_pickup_open: [1, 1800, 3, 1200, 4, 2265, 5, 800, 6, 500]
+    pose_pickup_open: [1, 2000, 3, 1200, 4, 2265, 5, 800, 6, 500]
     pose_pickup_lower: [1, 1800, 3, 1200, 4, 2265, 5, 2100, 6, 500]
     pose_pickup_grab: [1, 1200, 3, 1200, 4, 2265, 5, 2100, 6, 500]
     pose_pickup_lift: [1, 1200, 3, 1200, 4, 2265, 5, 800, 6, 500]

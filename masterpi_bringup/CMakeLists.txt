@@ -77,16 +77,20 @@ install(
 # ==============================================================================
 # SDK HIWONDER
 # ==============================================================================
-# Lo instalamos junto a los ejecutables Python en lib/masterpi_bringup.
-# Así los nodos pueden usar:
-#   from hiwonder_sdk import Board, yaml_handle
-# sin interferir con el paquete generado masterpi_bringup.srv.
-
+# Install Hiwonder SDK next to the Python executables.
 install(
   DIRECTORY masterpi_bringup/hiwonder_sdk
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Install Hiwonder SDK inside the generated Python package too.
+# Board.py imports:
+#   from masterpi_bringup.hiwonder_sdk import yaml_handle
+# so the SDK must also exist under Python site-packages/masterpi_bringup/.
+install(
+  DIRECTORY masterpi_bringup/hiwonder_sdk
+  DESTINATION local/lib/python3.10/dist-packages/${PROJECT_NAME}
+)
 # ==============================================================================
 # NODOS PYTHON EJECUTABLES
 # ==============================================================================
