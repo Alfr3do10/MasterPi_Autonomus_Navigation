@@ -21,14 +21,14 @@ public:
         // 1. Declarar y obtener parámetros de ROS 2
         this->declare_parameter<std::string>("frame_id", "camera_link");
         this->declare_parameter<double>("publish_rate", 15.0);
-        this->declare_parameter<bool>("publish_color", false);
+        this->declare_parameter<bool>("publish_color", false);  
         this->declare_parameter<bool>("publish_gray", true);
         this->declare_parameter<std::string>("image_topic", "/camera/image_raw");
         this->declare_parameter<std::string>("gray_topic", "/camera/image_gray");
         
         this->get_parameter("frame_id", frame_id_);
-        double publish_rate;
-        this->get_parameter("publish_rate", publish_rate);
+        this->get_parameter("publish_rate", publish_rate_);
+        this->get_parameter("publish_color", publish_color_);
 
         // 2. Cargar la calibración geométrica
         if (!cargar_calibracion()) {
@@ -56,7 +56,7 @@ public:
         image_pub_ = image_transport_->advertise("/camera/image_raw", 10);
 
         // 5. Crear el temporizador
-        auto interval = std::chrono::duration<double>(1.0 / publish_rate);
+        auto interval = std::chrono::duration<double>(1.0 / publish_rate_);
         timer_ = this->create_wall_timer(interval, std::bind(&CameraComponent::publish_image, this));
 
         RCLCPP_INFO(this->get_logger(), "Nodo de Cámara en Componente iniciado a %.1f FPS.", publish_rate);
@@ -87,7 +87,17 @@ private:
             fs["distortion_coefficients"] >> dist;
             fs.release();
 
-            cv::Size image_size(640, 480);
+            // =====================================================================
+            // ¡EL TRUCO MATEMÁTICO! 
+            // Escalar los parámetros intrínsecos de píxeles al 50% (de 640 a 320)
+            // =====================================================================
+            mtx.at<double>(0, 0) *= 0.5; // fx (Focal x)
+            mtx.at<double>(1, 1) *= 0.5; // fy (Focal y)
+            mtx.at<double>(0, 2) *= 0.5; // cx (Centro óptico x)
+            mtx.at<double>(1, 2) *= 0.5; // cy (Centro óptico y)
+
+            // Ahora sí, creamos el mapa optimizado para 320x240 de forma perfecta
+            cv::Size image_size(320, 240);
             cv::Mat new_camera_mtx = cv::getOptimalNewCameraMatrix(mtx, dist, image_size, 0, image_size);
             cv::initUndistortRectifyMap(mtx, dist, cv::Mat(), new_camera_mtx, image_size, CV_32FC1, mapx_, mapy_);
             
@@ -101,29 +111,43 @@ private:
 
     void publish_image()
     {
-        cv::Mat frame_raw, frame_rectificado;
+        cv::Mat frame_raw, frame_gray, frame_rectificado;
         cap_ >> frame_raw;
         if (frame_raw.empty()) {
             return;
         }
 
+        // 1. Redimensionar primero (Color) para procesar menos píxeles desde el inicio
         cv::resize(frame_raw, frame_raw, cv::Size(320, 240), 0, 0, cv::INTER_NEAREST);
-        cv::remap(frame_raw, frame_rectificado, mapx_, mapy_, cv::INTER_LINEAR);
+
+        std::string image_format;
+
+        if (!publish_color_) {
+            // 2. CONVERTIR A GRISES AQUÍ (Cuando la imagen es de 320x240 y antes del remap)
+            cv::cvtColor(frame_raw, frame_gray, cv::COLOR_BGR2GRAY);
+            
+            // 3. El remap ahora vuela porque solo procesa UN canal monocromático
+            cv::remap(frame_gray, frame_rectificado, mapx_, mapy_, cv::INTER_LINEAR);
+            image_format = "mono8";
+        } else {
+            // Si por alguna razón activas el color, hace el remap normal de 3 canales
+            cv::remap(frame_raw, frame_rectificado, mapx_, mapy_, cv::INTER_LINEAR);
+            image_format = "bgr8";
+        }
 
         std_msgs::msg::Header header;
         header.stamp = this->get_clock()->now();
         header.frame_id = frame_id_;
 
-        auto msg = cv_bridge::CvImage(header, "bgr8", frame_rectificado).toImageMsg();
-
-        // NOTA DE OPTIMIZACIÓN: Tenías duplicada la publicación en tu código original. 
-        // Con una sola vez basta para mandarlo a la red.
+        auto msg = cv_bridge::CvImage(header, image_format, frame_rectificado).toImageMsg();
         image_pub_.publish(*msg);
     }
 
     cv::VideoCapture cap_;
     cv::Mat mapx_, mapy_;
     std::string frame_id_;
+    bool publish_color_;
+    double publish_rate_;
     std::unique_ptr<image_transport::ImageTransport> image_transport_;
     image_transport::Publisher image_pub_;
     rclcpp::TimerBase::SharedPtr timer_;
