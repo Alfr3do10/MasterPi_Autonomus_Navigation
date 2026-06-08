@@ -18,7 +18,7 @@ endif()
 # ==============================================================================
 
 find_package(ament_cmake REQUIRED)
-find_package(ament_index_cpp REQUIRED)
+
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(rclpy REQUIRED)
@@ -55,7 +55,6 @@ ament_target_dependencies(camera_node_component
   image_transport
   cv_bridge
   OpenCV
-
 )
 
 rclcpp_components_register_nodes(camera_node_component
@@ -71,7 +70,6 @@ ament_target_dependencies(aruco_detector_component
   std_msgs
   cv_bridge
   OpenCV
-  
 )
 
 rclcpp_components_register_nodes(aruco_detector_component

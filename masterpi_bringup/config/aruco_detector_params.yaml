@@ -1,17 +1,6 @@
-aruco_detector:
+aruco_detector_component:
   ros__parameters:
-    image_topic: /camera/image_raw
-    marker_id_topic: /aruco/ids
-    marker_detection_topic: /aruco/detections
-
-    # OpenCV dictionary.
-    # 0 = cv::aruco::DICT_4X4_50
-    dictionary_id: 0
-
-    # Tamaño físico real del marcador en metros.
-    # Si tu ArUco mide 5 cm x 5 cm, deja 0.05.
-    # Si mide 6 cm x 6 cm, cambia a 0.06.
-    marker_size: 0.05
-
-    # Usa la calibración de cámara para calcular distancia y yaw.
-    use_calibrated_pose: true
+    image_topic: "/camera/image_raw"
+    marker_id_topic: "/aruco/ids"
+    dictionary_id: 10  # cv::aruco::DICT_4X4_50
+    marker_size: 0.05  # Tamaño del marcador en metros (5cm)

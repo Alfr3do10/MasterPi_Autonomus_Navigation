@@ -6,19 +6,16 @@ line_follower_node:
     mask_topic: /line_follower/mask
     status_topic: /line_follower/status
     enabled_topic: /line_follower/enabled
-
     start_enabled: true
     publish_debug: true
     debug_publish_rate: 3.0
 
-    # Para línea blanca/amarilla clara con imagen mono o brillo.
     detection_mode: brightness
 
     brightness_threshold: 180
     blur_kernel: 5
     morph_kernel: 5
 
-    # HSV queda como respaldo si cambias detection_mode a yellow.
     h_min: 18
     s_min: 70
     v_min: 70
@@ -26,10 +23,9 @@ line_follower_node:
     s_max: 255
     v_max: 255
 
-    # ROIs ajustadas a imagen 320x240.
-    roi_1: [105.0, 130.0, 80.0, 240.0, 0.15]
-    roi_2: [145.0, 175.0, 80.0, 240.0, 0.30]
-    roi_3: [190.0, 235.0, 80.0, 240.0, 0.55]
+    roi_1: [135.0, 220.0, 210.0, 430.0, 0.45]
+    roi_2: [220.0, 310.0, 200.0, 440.0, 0.40]
+    roi_3: [310.0, 350.0, 230.0, 410.0, 0.15]
 
     base_speed: 0.13
 

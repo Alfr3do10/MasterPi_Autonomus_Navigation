@@ -8,7 +8,7 @@ import rclpy
 from rclpy.node import Node
 
 from geometry_msgs.msg import Twist
-from std_msgs.msg import Bool, Float32MultiArray
+from std_msgs.msg import Bool
 
 from masterpi_bringup.srv import RunArmMotion
 
@@ -17,109 +17,89 @@ class MissionManagerNode(Node):
     def __init__(self):
         super().__init__('mission_manager_node')
 
+        # ----------------------------------------------------------------------
+        # Parameters
+        # ----------------------------------------------------------------------
         self.declare_parameter('manual_enter_trigger', True)
         self.declare_parameter('station_trigger_topic', '/mission/station_trigger')
+
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
         self.declare_parameter('line_follower_enabled_topic', '/line_follower/enabled')
+
         self.declare_parameter('arm_service_name', '/arm/run_motion')
+
         self.declare_parameter('initial_has_cube', False)
+
         self.declare_parameter('set_carry_pose_on_start', True)
         self.declare_parameter('enable_line_follower_on_start', True)
+
         self.declare_parameter('stop_before_action_s', 0.50)
         self.declare_parameter('stop_after_arm_action_s', 0.50)
         self.declare_parameter('stop_after_turn_s', 0.50)
-        self.declare_parameter('turn_angular_speed', 1.2)
-        self.declare_parameter('turn_duration_s', 1.8)
+
+        self.declare_parameter('turn_angular_speed', 1.0)
+        self.declare_parameter('turn_duration_s', 1.70)
         self.declare_parameter('turn_direction', 1.0)
+
         self.declare_parameter('command_rate_hz', 20.0)
-        self.declare_parameter('arm_service_timeout_s', 20.0)
 
-        self.declare_parameter('aruco_trigger_enabled', True)
-        self.declare_parameter('aruco_detections_topic', '/aruco/detections')
-        self.declare_parameter('valid_aruco_ids', [0])
-        self.declare_parameter('aruco_trigger_max_distance_m', 1.20)
-        self.declare_parameter('aruco_trigger_confirmations', 3)
-        self.declare_parameter('aruco_detection_timeout_s', 0.60)
-        self.declare_parameter('station_cooldown_s', 4.0)
-        self.declare_parameter('ignore_same_marker_s', 6.0)
+        self.declare_parameter('arm_service_timeout_s', 10.0)
 
-        # Expected /aruco/detections default format:
-        # [id, yaw_error_deg, distance_error_m]
-        # distance_error_m = current_distance_m - approach_target_distance_m
-        self.declare_parameter('aruco_detection_group_size', 3)
-        self.declare_parameter('aruco_id_index', 0)
-        self.declare_parameter('aruco_yaw_error_index', 1)
-        self.declare_parameter('aruco_distance_index', 2)
-        self.declare_parameter('aruco_distance_mode', 'error')  # error or absolute
+        self.manual_enter_trigger = bool(
+            self.get_parameter('manual_enter_trigger').value
+        )
+        self.station_trigger_topic = str(
+            self.get_parameter('station_trigger_topic').value
+        )
 
-        self.declare_parameter('require_aruco_positioning', True)
-        self.declare_parameter('approach_target_distance_m', 0.25)
-        self.declare_parameter('approach_distance_tolerance_m', 0.02)
-        self.declare_parameter('approach_max_duration_s', 8.0)
-        self.declare_parameter('approach_allow_reverse', False)
-        self.declare_parameter('approach_forward_speed', 0.08)
-        self.declare_parameter('approach_min_forward_speed', 0.035)
-        self.declare_parameter('approach_distance_kp', 0.60)
-        self.declare_parameter('approach_yaw_kp', 0.020)
-        self.declare_parameter('approach_max_angular_speed', 0.45)
-        self.declare_parameter('align_yaw_tolerance_deg', 3.0)
-        self.declare_parameter('align_max_duration_s', 4.0)
-        self.declare_parameter('align_yaw_kp', 0.030)
-        self.declare_parameter('align_max_angular_speed', 0.45)
-        self.declare_parameter('yaw_control_sign', -1.0)
+        self.cmd_vel_topic = str(self.get_parameter('cmd_vel_topic').value)
+        self.line_follower_enabled_topic = str(
+            self.get_parameter('line_follower_enabled_topic').value
+        )
 
-        self.manual_enter_trigger = self.get_bool('manual_enter_trigger')
-        self.station_trigger_topic = self.get_str('station_trigger_topic')
-        self.cmd_vel_topic = self.get_str('cmd_vel_topic')
-        self.line_follower_enabled_topic = self.get_str('line_follower_enabled_topic')
-        self.arm_service_name = self.get_str('arm_service_name')
-        self.has_cube = self.get_bool('initial_has_cube')
-        self.set_carry_pose_on_start = self.get_bool('set_carry_pose_on_start')
-        self.enable_line_follower_on_start = self.get_bool('enable_line_follower_on_start')
-        self.stop_before_action_s = self.get_float('stop_before_action_s')
-        self.stop_after_arm_action_s = self.get_float('stop_after_arm_action_s')
-        self.stop_after_turn_s = self.get_float('stop_after_turn_s')
-        self.turn_angular_speed = self.get_float('turn_angular_speed')
-        self.turn_duration_s = self.get_float('turn_duration_s')
-        self.turn_direction = self.get_float('turn_direction')
-        self.command_rate_hz = self.get_float('command_rate_hz')
-        self.arm_service_timeout_s = self.get_float('arm_service_timeout_s')
+        self.arm_service_name = str(self.get_parameter('arm_service_name').value)
 
-        self.aruco_trigger_enabled = self.get_bool('aruco_trigger_enabled')
-        self.aruco_detections_topic = self.get_str('aruco_detections_topic')
-        self.valid_aruco_ids = [int(x) for x in self.get_parameter('valid_aruco_ids').value]
-        self.aruco_trigger_max_distance_m = self.get_float('aruco_trigger_max_distance_m')
-        self.aruco_trigger_confirmations = self.get_int('aruco_trigger_confirmations')
-        self.aruco_detection_timeout_s = self.get_float('aruco_detection_timeout_s')
-        self.station_cooldown_s = self.get_float('station_cooldown_s')
-        self.ignore_same_marker_s = self.get_float('ignore_same_marker_s')
-        self.aruco_detection_group_size = self.get_int('aruco_detection_group_size')
-        self.aruco_id_index = self.get_int('aruco_id_index')
-        self.aruco_yaw_error_index = self.get_int('aruco_yaw_error_index')
-        self.aruco_distance_index = self.get_int('aruco_distance_index')
-        self.aruco_distance_mode = self.get_str('aruco_distance_mode').lower().strip()
-        self.require_aruco_positioning = self.get_bool('require_aruco_positioning')
-        self.approach_target_distance_m = self.get_float('approach_target_distance_m')
-        self.approach_distance_tolerance_m = self.get_float('approach_distance_tolerance_m')
-        self.approach_max_duration_s = self.get_float('approach_max_duration_s')
-        self.approach_allow_reverse = self.get_bool('approach_allow_reverse')
-        self.approach_forward_speed = self.get_float('approach_forward_speed')
-        self.approach_min_forward_speed = self.get_float('approach_min_forward_speed')
-        self.approach_distance_kp = self.get_float('approach_distance_kp')
-        self.approach_yaw_kp = self.get_float('approach_yaw_kp')
-        self.approach_max_angular_speed = self.get_float('approach_max_angular_speed')
-        self.align_yaw_tolerance_deg = self.get_float('align_yaw_tolerance_deg')
-        self.align_max_duration_s = self.get_float('align_max_duration_s')
-        self.align_yaw_kp = self.get_float('align_yaw_kp')
-        self.align_max_angular_speed = self.get_float('align_max_angular_speed')
-        self.yaw_control_sign = self.get_float('yaw_control_sign')
+        self.has_cube = bool(self.get_parameter('initial_has_cube').value)
 
-        if self.aruco_distance_mode not in ('error', 'absolute'):
-            self.get_logger().warn('Invalid aruco_distance_mode. Using error mode.')
-            self.aruco_distance_mode = 'error'
+        self.set_carry_pose_on_start = bool(
+            self.get_parameter('set_carry_pose_on_start').value
+        )
+        self.enable_line_follower_on_start = bool(
+            self.get_parameter('enable_line_follower_on_start').value
+        )
 
+        self.stop_before_action_s = float(
+            self.get_parameter('stop_before_action_s').value
+        )
+        self.stop_after_arm_action_s = float(
+            self.get_parameter('stop_after_arm_action_s').value
+        )
+        self.stop_after_turn_s = float(
+            self.get_parameter('stop_after_turn_s').value
+        )
+
+        self.turn_angular_speed = float(
+            self.get_parameter('turn_angular_speed').value
+        )
+        self.turn_duration_s = float(
+            self.get_parameter('turn_duration_s').value
+        )
+        self.turn_direction = float(
+            self.get_parameter('turn_direction').value
+        )
+
+        self.command_rate_hz = float(
+            self.get_parameter('command_rate_hz').value
+        )
+
+        self.arm_service_timeout_s = float(
+            self.get_parameter('arm_service_timeout_s').value
+        )
+
+        # ----------------------------------------------------------------------
+        # ROS interfaces
+        # ----------------------------------------------------------------------
         self.cmd_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
-
         self.line_follower_enabled_pub = self.create_publisher(
             Bool,
             self.line_follower_enabled_topic,
@@ -133,28 +113,17 @@ class MissionManagerNode(Node):
             10
         )
 
-        self.aruco_detection_sub = None
+        self.arm_client = self.create_client(
+            RunArmMotion,
+            self.arm_service_name
+        )
 
-        if self.aruco_trigger_enabled:
-            self.aruco_detection_sub = self.create_subscription(
-                Float32MultiArray,
-                self.aruco_detections_topic,
-                self.aruco_detections_callback,
-                10
-            )
-
-        self.arm_client = self.create_client(RunArmMotion, self.arm_service_name)
-
+        # ----------------------------------------------------------------------
+        # Internal state
+        # ----------------------------------------------------------------------
         self.busy = False
         self.pending_station_trigger = False
-        self.pending_station_marker_id = None
-        self.active_station_marker_id = None
         self.startup_done = False
-        self.latest_aruco_detection = None
-        self.last_trigger_marker_id = None
-        self.current_confirmation_count = 0
-        self.last_station_trigger_time = 0.0
-        self.ignored_marker_until = {}
 
         self.lock = threading.Lock()
 
@@ -168,29 +137,26 @@ class MissionManagerNode(Node):
             self.enter_thread.start()
 
         self.get_logger().info('Mission manager node started.')
-        self.get_logger().info(f'ArUco detections topic: {self.aruco_detections_topic}')
+        self.get_logger().info(f'Manual Enter trigger: {self.manual_enter_trigger}')
+        self.get_logger().info(f'Station trigger topic: {self.station_trigger_topic}')
+        self.get_logger().info(f'cmd_vel topic: {self.cmd_vel_topic}')
         self.get_logger().info(
-            'Expected detections: '
-            f'[id_index={self.aruco_id_index}, '
-            f'yaw_index={self.aruco_yaw_error_index}, '
-            f'distance_index={self.aruco_distance_index}], '
-            f'distance_mode={self.aruco_distance_mode}'
+            f'Line follower enabled topic: {self.line_follower_enabled_topic}'
+        )
+        self.get_logger().info(f'Arm service: {self.arm_service_name}')
+        self.get_logger().info(f'Initial has_cube: {self.has_cube}')
+        self.get_logger().info(
+            f'Turn 180 approx: speed={self.turn_angular_speed}, '
+            f'duration={self.turn_duration_s}, direction={self.turn_direction}'
         )
 
-    def get_bool(self, name):
-        return bool(self.get_parameter(name).value)
-
-    def get_int(self, name):
-        return int(self.get_parameter(name).value)
-
-    def get_float(self, name):
-        return float(self.get_parameter(name).value)
-
-    def get_str(self, name):
-        return str(self.get_parameter(name).value)
-
+    # --------------------------------------------------------------------------
+    # Trigger inputs
+    # --------------------------------------------------------------------------
     def manual_enter_loop(self):
-        self.get_logger().info('Press ENTER to simulate station detection.')
+        self.get_logger().info(
+            'Press ENTER in this terminal to simulate ArUco station detection.'
+        )
 
         while rclpy.ok():
             try:
@@ -200,7 +166,7 @@ class MissionManagerNode(Node):
                     time.sleep(0.2)
                     continue
 
-                self.request_station_trigger(source='ENTER', marker_id=None)
+                self.request_station_trigger(source='ENTER')
 
             except Exception as exc:
                 self.get_logger().warn(f'Manual Enter thread error: {exc}')
@@ -208,143 +174,27 @@ class MissionManagerNode(Node):
 
     def station_trigger_callback(self, msg):
         if bool(msg.data):
-            self.request_station_trigger(
-                source=self.station_trigger_topic,
-                marker_id=None
-            )
+            self.request_station_trigger(source=self.station_trigger_topic)
 
-    def aruco_detections_callback(self, msg):
-        detections = self.parse_aruco_detections(msg.data)
-        detections = [d for d in detections if self.is_valid_marker_id(d['id'])]
-
-        if not detections:
-            return
-
-        now = time.time()
-
-        best_detection = min(
-            detections,
-            key=lambda d: abs(d['distance_error_m'])
-        )
-
-        best_detection['stamp'] = now
-
-        with self.lock:
-            self.latest_aruco_detection = best_detection
-
-        self.maybe_request_aruco_station_trigger(best_detection, now)
-
-    def parse_aruco_detections(self, data):
-        values = list(data)
-        detections = []
-
-        group_size = max(3, self.aruco_detection_group_size)
-
-        required_max_index = max(
-            self.aruco_id_index,
-            self.aruco_yaw_error_index,
-            self.aruco_distance_index
-        )
-
-        for start in range(0, len(values), group_size):
-            group = values[start:start + group_size]
-
-            if len(group) <= required_max_index:
-                continue
-
-            try:
-                marker_id = int(round(float(group[self.aruco_id_index])))
-                yaw_error_deg = float(group[self.aruco_yaw_error_index])
-                distance_value = float(group[self.aruco_distance_index])
-            except (TypeError, ValueError):
-                continue
-
-            if self.aruco_distance_mode == 'absolute':
-                distance_m = distance_value
-                distance_error_m = distance_m - self.approach_target_distance_m
-            else:
-                distance_error_m = distance_value
-                distance_m = self.approach_target_distance_m + distance_error_m
-
-            detections.append({
-                'id': marker_id,
-                'yaw_error_deg': yaw_error_deg,
-                'distance_m': distance_m,
-                'distance_error_m': distance_error_m,
-            })
-
-        return detections
-
-    def maybe_request_aruco_station_trigger(self, detection, now):
-        marker_id = detection['id']
-
-        with self.lock:
-            if self.busy or self.pending_station_trigger:
-                return
-
-            if now - self.last_station_trigger_time < self.station_cooldown_s:
-                return
-
-            if now < self.ignored_marker_until.get(marker_id, 0.0):
-                return
-
-            if detection['distance_m'] > self.aruco_trigger_max_distance_m:
-                self.current_confirmation_count = 0
-                self.last_trigger_marker_id = None
-                return
-
-            if self.last_trigger_marker_id == marker_id:
-                self.current_confirmation_count += 1
-            else:
-                self.last_trigger_marker_id = marker_id
-                self.current_confirmation_count = 1
-
-            if self.current_confirmation_count < self.aruco_trigger_confirmations:
-                return
-
-        self.request_station_trigger(
-            source=(
-                f'ArUco id={marker_id}, '
-                f'distance={detection["distance_m"]:.3f} m, '
-                f'distance_error={detection["distance_error_m"]:.3f} m, '
-                f'yaw_error={detection["yaw_error_deg"]:.1f} deg'
-            ),
-            marker_id=marker_id
-        )
-
-    def request_station_trigger(self, source='unknown', marker_id=None):
-        now = time.time()
-
+    def request_station_trigger(self, source='unknown'):
         with self.lock:
             if self.busy:
                 self.get_logger().warn(
-                    f'Trigger ignored from {source}: mission is busy.'
-                )
-                return
-
-            if now - self.last_station_trigger_time < self.station_cooldown_s:
-                self.get_logger().warn(
-                    f'Trigger ignored from {source}: cooldown active.'
+                    f'Station trigger ignored from {source}: mission is busy.'
                 )
                 return
 
             self.pending_station_trigger = True
-            self.pending_station_marker_id = marker_id
-            self.last_station_trigger_time = now
-            self.current_confirmation_count = 0
 
         self.get_logger().info(f'Station trigger received from {source}.')
 
-    def is_valid_marker_id(self, marker_id):
-        return not self.valid_aruco_ids or int(marker_id) in self.valid_aruco_ids
-
+    # --------------------------------------------------------------------------
+    # Timer / worker orchestration
+    # --------------------------------------------------------------------------
     def main_timer_callback(self):
         if not self.startup_done:
             self.startup_done = True
-            threading.Thread(
-                target=self.startup_sequence,
-                daemon=True
-            ).start()
+            threading.Thread(target=self.startup_sequence, daemon=True).start()
             return
 
         with self.lock:
@@ -353,52 +203,47 @@ class MissionManagerNode(Node):
 
             self.pending_station_trigger = False
             self.busy = True
-            self.active_station_marker_id = self.pending_station_marker_id
-            self.pending_station_marker_id = None
 
-        threading.Thread(
-            target=self.station_sequence_worker,
-            daemon=True
-        ).start()
+        threading.Thread(target=self.station_sequence_worker, daemon=True).start()
 
     def startup_sequence(self):
         self.get_logger().info('Running mission startup sequence...')
 
         if not self.wait_for_arm_service():
-            self.get_logger().error('Arm service not available during startup.')
+            self.get_logger().error(
+                'Arm service not available during startup. Mission will still run, '
+                'but arm actions will fail until the service is available.'
+            )
 
         if self.set_carry_pose_on_start:
-            if not self.call_arm_motion('carry_line_follower'):
-                self.get_logger().warn('Could not set carry_line_follower pose.')
+            success = self.call_arm_motion('carry_line_follower')
+
+            if not success:
+                self.get_logger().warn(
+                    'Could not set carry_line_follower pose during startup.'
+                )
 
         if self.enable_line_follower_on_start:
             self.set_line_follower_enabled(True)
 
         self.stop_robot(duration_s=0.20)
+        self.get_logger().info('Startup sequence finished. FOLLOW_LINE mode is active.')
 
-        self.get_logger().info(
-            'Startup sequence finished. FOLLOW_LINE mode is active.'
-        )
-
+    # --------------------------------------------------------------------------
+    # Mission sequence
+    # --------------------------------------------------------------------------
     def station_sequence_worker(self):
-        marker_id_for_ignore = self.active_station_marker_id
-
         try:
             self.get_logger().info('========================================')
             self.get_logger().info('Station sequence started.')
 
+            # 1. Disable line follower so it stops publishing motion commands.
             self.set_line_follower_enabled(False)
 
-            if self.require_aruco_positioning:
-                positioning_ok = self.position_with_aruco()
-
-                if not positioning_ok:
-                    self.get_logger().warn(
-                        'ArUco positioning incomplete. Continuing with arm action.'
-                    )
-
+            # 2. Stop the robot before moving the arm.
             self.stop_robot(self.stop_before_action_s)
 
+            # 3. Decide arm action depending on cube state.
             if self.has_cube:
                 arm_motion = 'drop'
                 self.get_logger().info('Robot has cube -> running DROP.')
@@ -410,36 +255,25 @@ class MissionManagerNode(Node):
 
             if success:
                 self.has_cube = not self.has_cube
-                self.get_logger().info(
-                    f'Arm action finished. has_cube={self.has_cube}'
-                )
+                self.get_logger().info(f'Arm action finished. has_cube={self.has_cube}')
             else:
                 self.get_logger().error(
                     'Arm action failed. Keeping previous has_cube state.'
                 )
 
+            # 4. Stop after arm action.
             self.stop_robot(self.stop_after_arm_action_s)
 
+            # 5. Approximate 180-degree turn.
             self.turn_180()
 
+            # 6. Stop after turn.
             self.stop_robot(self.stop_after_turn_s)
 
-            if marker_id_for_ignore is not None:
-                with self.lock:
-                    self.ignored_marker_until[int(marker_id_for_ignore)] = (
-                        time.time() + self.ignore_same_marker_s
-                    )
-
-                self.get_logger().info(
-                    f'Ignoring ArUco id={marker_id_for_ignore} for '
-                    f'{self.ignore_same_marker_s:.1f} s.'
-                )
-
+            # 7. Re-enable line follower.
             self.set_line_follower_enabled(True)
 
-            self.get_logger().info(
-                'Station sequence finished. FOLLOW_LINE mode active.'
-            )
+            self.get_logger().info('Station sequence finished. FOLLOW_LINE mode active.')
             self.get_logger().info('========================================')
 
         except Exception as exc:
@@ -450,146 +284,10 @@ class MissionManagerNode(Node):
         finally:
             with self.lock:
                 self.busy = False
-                self.active_station_marker_id = None
 
-    def position_with_aruco(self):
-        self.get_logger().info('Starting ArUco positioning.')
-
-        approach_ok = self.approach_aruco_target_distance()
-
-        self.stop_robot(duration_s=0.10)
-
-        align_ok = self.align_aruco_yaw()
-
-        self.stop_robot(duration_s=0.10)
-
-        if approach_ok and align_ok:
-            self.get_logger().info('ArUco positioning finished successfully.')
-            return True
-
-        self.get_logger().warn(
-            f'ArUco positioning incomplete: approach_ok={approach_ok}, '
-            f'align_ok={align_ok}'
-        )
-
-        return False
-
-    def approach_aruco_target_distance(self):
-        self.get_logger().info(
-            f'Approaching target distance: {self.approach_target_distance_m:.2f} m.'
-        )
-
-        start_time = time.time()
-        rate_period = 1.0 / max(1.0, self.command_rate_hz)
-
-        while rclpy.ok() and time.time() - start_time < self.approach_max_duration_s:
-            detection = self.get_fresh_aruco_detection()
-
-            if detection is None:
-                self.publish_cmd_vel(0.0, 0.0)
-                time.sleep(rate_period)
-                continue
-
-            distance_error_m = detection['distance_error_m']
-            yaw_error_deg = detection['yaw_error_deg']
-
-            if abs(distance_error_m) <= self.approach_distance_tolerance_m:
-                self.get_logger().info(
-                    f'Target distance reached. distance_error={distance_error_m:.3f} m.'
-                )
-                self.publish_cmd_vel(0.0, 0.0)
-                return True
-
-            if distance_error_m > 0.0:
-                linear_x = self.clamp(
-                    self.approach_distance_kp * distance_error_m,
-                    self.approach_min_forward_speed,
-                    self.approach_forward_speed
-                )
-            elif self.approach_allow_reverse:
-                linear_x = self.clamp(
-                    self.approach_distance_kp * distance_error_m,
-                    -self.approach_forward_speed,
-                    -self.approach_min_forward_speed
-                )
-            else:
-                self.get_logger().warn(
-                    f'Already closer than target. distance_error={distance_error_m:.3f} m.'
-                )
-                self.publish_cmd_vel(0.0, 0.0)
-                return True
-
-            angular_z = self.clamp(
-                self.yaw_control_sign * self.approach_yaw_kp * yaw_error_deg,
-                -self.approach_max_angular_speed,
-                self.approach_max_angular_speed
-            )
-
-            self.publish_cmd_vel(linear_x, angular_z)
-
-            time.sleep(rate_period)
-
-        self.publish_cmd_vel(0.0, 0.0)
-        self.get_logger().warn('ArUco approach timeout.')
-
-        return False
-
-    def align_aruco_yaw(self):
-        self.get_logger().info('Aligning ArUco yaw.')
-
-        start_time = time.time()
-        rate_period = 1.0 / max(1.0, self.command_rate_hz)
-
-        while rclpy.ok() and time.time() - start_time < self.align_max_duration_s:
-            detection = self.get_fresh_aruco_detection()
-
-            if detection is None:
-                self.publish_cmd_vel(0.0, 0.0)
-                time.sleep(rate_period)
-                continue
-
-            yaw_error_deg = detection['yaw_error_deg']
-
-            if abs(yaw_error_deg) <= self.align_yaw_tolerance_deg:
-                self.get_logger().info(
-                    f'ArUco yaw aligned. yaw_error={yaw_error_deg:.1f} deg.'
-                )
-                self.publish_cmd_vel(0.0, 0.0)
-                return True
-
-            angular_z = self.clamp(
-                self.yaw_control_sign * self.align_yaw_kp * yaw_error_deg,
-                -self.align_max_angular_speed,
-                self.align_max_angular_speed
-            )
-
-            self.publish_cmd_vel(0.0, angular_z)
-
-            time.sleep(rate_period)
-
-        self.publish_cmd_vel(0.0, 0.0)
-        self.get_logger().warn('ArUco yaw alignment timeout.')
-
-        return False
-
-    def get_fresh_aruco_detection(self):
-        now = time.time()
-
-        with self.lock:
-            detection = self.latest_aruco_detection
-            active_marker_id = self.active_station_marker_id
-
-        if detection is None:
-            return None
-
-        if now - detection.get('stamp', 0.0) > self.aruco_detection_timeout_s:
-            return None
-
-        if active_marker_id is not None and detection['id'] != active_marker_id:
-            return None
-
-        return detection
-
+    # --------------------------------------------------------------------------
+    # Robot movement helpers
+    # --------------------------------------------------------------------------
     def publish_cmd_vel(self, linear_x=0.0, angular_z=0.0):
         msg = Twist()
         msg.linear.x = float(linear_x)
@@ -624,7 +322,7 @@ class MissionManagerNode(Node):
         start_time = time.time()
         rate_period = 1.0 / max(1.0, self.command_rate_hz)
 
-        while rclpy.ok() and time.time() - start_time < self.turn_duration_s:
+        while rclpy.ok() and (time.time() - start_time) < self.turn_duration_s:
             self.publish_cmd_vel(0.0, angular_z)
             time.sleep(rate_period)
 
@@ -637,13 +335,11 @@ class MissionManagerNode(Node):
         self.line_follower_enabled_pub.publish(msg)
 
         state = 'enabled' if enabled else 'disabled'
-
         self.get_logger().info(f'Line follower {state}.')
 
-    @staticmethod
-    def clamp(value, min_value, max_value):
-        return max(min_value, min(max_value, value))
-
+    # --------------------------------------------------------------------------
+    # Arm service helpers
+    # --------------------------------------------------------------------------
     def wait_for_arm_service(self):
         self.get_logger().info(f'Waiting for arm service: {self.arm_service_name}')
 
@@ -697,13 +393,11 @@ class MissionManagerNode(Node):
             return True
 
         self.get_logger().error(f'Arm service failed: {response.message}')
-
         return False
 
 
 def main(args=None):
     rclpy.init(args=args)
-
     node = MissionManagerNode()
 
     try:
