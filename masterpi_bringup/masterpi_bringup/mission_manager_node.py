@@ -45,6 +45,7 @@ class MissionManagerNode(Node):
         self.declare_parameter('aruco_trigger_enabled', True)
         self.declare_parameter('aruco_detections_topic', '/aruco/detections')
         self.declare_parameter('valid_aruco_ids', [1, 3])
+        self.declare_parameter('log_aruco_detections', False)
         self.declare_parameter('aruco_trigger_max_distance_m', 1.20)
         self.declare_parameter('aruco_trigger_confirmations', 3)
         self.declare_parameter('aruco_detection_timeout_s', 0.60)
@@ -95,6 +96,7 @@ class MissionManagerNode(Node):
         self.aruco_trigger_enabled = self.get_bool('aruco_trigger_enabled')
         self.aruco_detections_topic = self.get_str('aruco_detections_topic')
         self.valid_aruco_ids = [int(x) for x in self.get_parameter('valid_aruco_ids').value]
+        self.log_aruco_detections = self.get_bool('log_aruco_detections')
         self.aruco_trigger_max_distance_m = self.get_float('aruco_trigger_max_distance_m')
         self.aruco_trigger_confirmations = self.get_int('aruco_trigger_confirmations')
         self.aruco_detection_timeout_s = self.get_float('aruco_detection_timeout_s')
@@ -239,6 +241,19 @@ class MissionManagerNode(Node):
 
         with self.lock:
             self.latest_aruco_detection = best_detection
+
+        # Optional detailed logging to help validate yaw/distance interpretation
+        if self.log_aruco_detections:
+            try:
+                dets_str = []
+                for d in detections:
+                    dets_str.append(
+                        f"id={d['id']} yaw={d['yaw_error_deg']:.2f}° "
+                        f"dist={d['distance_m']:.3f} m err={d['distance_error_m']:.3f} m"
+                    )
+                self.get_logger().info(f"ArUco detections parsed: {', '.join(dets_str)}")
+            except Exception:
+                self.get_logger().info(f"ArUco detections parsed (raw): {detections}")
 
         self.maybe_request_aruco_station_trigger(best_detection, now)
 
