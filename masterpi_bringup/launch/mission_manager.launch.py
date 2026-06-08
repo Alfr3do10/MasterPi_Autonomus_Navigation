@@ -41,11 +41,19 @@ def generate_launch_description():
         'aruco_detector_params.yaml'
     )
 
+    sonar_safety_params = os.path.join(
+        pkg_share,
+        'config',
+        'sonar_safety_params.yaml'
+    )
+
     start_camera = LaunchConfiguration('start_camera')
     start_motor = LaunchConfiguration('start_motor')
     start_line_follower = LaunchConfiguration('start_line_follower')
     start_arm_service = LaunchConfiguration('start_arm_service')
     start_mission_manager = LaunchConfiguration('start_mission_manager')
+    start_sonar = LaunchConfiguration('start_sonar')
+    start_sonar_safety = LaunchConfiguration('start_sonar_safety')
 
     use_mock_hardware = LaunchConfiguration('use_mock_hardware')
     use_deviation = LaunchConfiguration('use_deviation')
@@ -82,6 +90,29 @@ def generate_launch_description():
         ],
         output='screen',
         condition=IfCondition(start_camera),
+    )
+
+    sonar_node = Node(
+        package=package_name,
+        executable='sonar_node.py',
+        name='sonar_node',
+        output='screen',
+        parameters=[
+            {
+                'use_mock_hardware': use_mock_hardware,
+                'publish_rate': 10.0,
+            }
+        ],
+        condition=IfCondition(start_sonar),
+    )
+
+    sonar_safety_node = Node(
+        package=package_name,
+        executable='sonar_safety_node.py',
+        name='sonar_safety_node',
+        output='screen',
+        parameters=[sonar_safety_params],
+        condition=IfCondition(start_sonar_safety),
     )
 
     line_follower_node = Node(
@@ -130,7 +161,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'start_camera',
             default_value='true',
-            description='Start the C++ camera node.'
+            description='Start the C++ camera node and ArUco detector.'
         ),
 
         DeclareLaunchArgument(
@@ -158,9 +189,21 @@ def generate_launch_description():
         ),
 
         DeclareLaunchArgument(
+            'start_sonar',
+            default_value='true',
+            description='Start sonar_node.py.'
+        ),
+
+        DeclareLaunchArgument(
+            'start_sonar_safety',
+            default_value='true',
+            description='Start sonar_safety_node.py.'
+        ),
+
+        DeclareLaunchArgument(
             'use_mock_hardware',
             default_value='false',
-            description='If true, arm service logs servo commands but does not move hardware.'
+            description='If true, hardware nodes log commands but do not move hardware.'
         ),
 
         DeclareLaunchArgument(
@@ -170,6 +213,20 @@ def generate_launch_description():
         ),
 
         camera_aruco_container,
+
+        TimerAction(
+            period=0.5,
+            actions=[
+                sonar_node,
+            ]
+        ),
+
+        TimerAction(
+            period=0.8,
+            actions=[
+                sonar_safety_node,
+            ]
+        ),
 
         TimerAction(
             period=1.0,

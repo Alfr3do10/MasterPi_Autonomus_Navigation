@@ -144,6 +144,7 @@ install(
     masterpi_bringup/odom_node.py
     masterpi_bringup/servo_node.py
     masterpi_bringup/sonar_node.py
+    masterpi_bringup/sonar_safety_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
