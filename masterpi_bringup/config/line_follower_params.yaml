@@ -1,6 +1,6 @@
 line_follower_node:
   ros__parameters:
-    image_topic: /camera/image_gray
+    image_topic: /camera/image_raw
     cmd_vel_topic: /cmd_vel
     debug_image_topic: /line_follower/debug_image
     mask_topic: /line_follower/mask
