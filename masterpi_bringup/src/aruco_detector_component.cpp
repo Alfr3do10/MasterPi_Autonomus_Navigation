@@ -135,12 +135,12 @@ private:
         // Calcular distancia y orientación para cada marcador
         for (size_t i = 0; i < ids.size(); ++i) {
           double distance, yaw;
-          calculate_marker_pose(corners[i], distance, roll, pitch, yaw);
+          calculate_marker_pose(corners[i], distance, yaw);
           
           if (distance > 0) {
             RCLCPP_INFO(this->get_logger(), 
               "Marcador ID: %d | Distancia: %.3f m| Yaw: %.1f°",
-              ids[i], distance, roll, pitch, yaw);
+              ids[i], distance, yaw);
           }
         }
       }
