@@ -35,6 +35,12 @@ def generate_launch_description():
         'mission_manager_params.yaml'
     )
 
+    aruco_detector_params = os.path.join(
+        pkg_share,
+        'config',
+        'aruco_detector_params.yaml'
+    )
+
     start_camera = LaunchConfiguration('start_camera')
     start_motor = LaunchConfiguration('start_motor')
     start_line_follower = LaunchConfiguration('start_line_follower')
@@ -66,8 +72,10 @@ def generate_launch_description():
                 plugin='masterpi_bringup::ArucoDetectorComponent',
                 name='aruco_detector',
                 parameters=[
+                    aruco_detector_params,
                     {'image_topic': '/camera/image_raw'},
                     {'marker_id_topic': '/aruco/ids'},
+                    {'marker_detection_topic': '/aruco/detections'},
                 ],
                 extra_arguments=[{'use_intra_process_comms': True}],
             ),
