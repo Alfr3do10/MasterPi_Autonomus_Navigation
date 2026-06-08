@@ -52,10 +52,11 @@ public:
   }
 
 private:
+
   void calculate_marker_pose(const std::vector<cv::Point2f> & marker_corners,
-                             double & distance, double & roll, double & pitch, double & yaw)
+                            double & distance, double & yaw)
   {
-    // Puntos 3D del marcador en su sistema de coordenadas local (cuadrado de marker_size x marker_size)
+    // Puntos 3D del marcador en su sistema de coordenadas local
     std::vector<cv::Point3f> object_points = {
       cv::Point3f(-marker_size_ / 2, marker_size_ / 2, 0),
       cv::Point3f(marker_size_ / 2, marker_size_ / 2, 0),
@@ -83,23 +84,22 @@ private:
       cv::Mat rotation_matrix;
       cv::Rodrigues(rvec, rotation_matrix);
 
-      // Extraer ángulos de Euler de la matriz de rotación
-      // Usando la convención ZYX (yaw-pitch-roll)
-      roll = std::atan2(rotation_matrix.at<double>(2, 1), rotation_matrix.at<double>(2, 2));
-      pitch = std::asin(-rotation_matrix.at<double>(2, 0));
-      yaw = std::atan2(rotation_matrix.at<double>(1, 0), rotation_matrix.at<double>(0, 0));
+      // Cálculo directo del verdadero YAW (Rotación sobre el eje Y de la cámara)
+      yaw = std::atan2(-rotation_matrix.at<double>(0, 2), -rotation_matrix.at<double>(2, 2));
 
       // Convertir de radianes a grados
-      roll = roll * 180.0 / M_PI;
-      pitch = pitch * 180.0 / M_PI;
       yaw = yaw * 180.0 / M_PI;
+
+      // Normalizar el ángulo estrictamente entre -180° y 180°
+      if (yaw > 180.0) yaw -= 360.0;
+      if (yaw < -180.0) yaw += 360.0;
+
     } else {
       distance = -1.0;
-      roll = 0.0;
-      pitch = 0.0;
       yaw = 0.0;
     }
   }
+  
 
   void image_callback(const sensor_msgs::msg::Image::ConstSharedPtr msg)
   {
@@ -134,12 +134,12 @@ private:
 
         // Calcular distancia y orientación para cada marcador
         for (size_t i = 0; i < ids.size(); ++i) {
-          double distance, roll, pitch, yaw;
+          double distance, yaw;
           calculate_marker_pose(corners[i], distance, roll, pitch, yaw);
           
           if (distance > 0) {
             RCLCPP_INFO(this->get_logger(), 
-              "Marcador ID: %d | Distancia: %.3f m | Roll: %.1f° | Pitch: %.1f° | Yaw: %.1f°",
+              "Marcador ID: %d | Distancia: %.3f m| Yaw: %.1f°",
               ids[i], distance, roll, pitch, yaw);
           }
         }
