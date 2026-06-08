@@ -55,7 +55,7 @@ ament_target_dependencies(camera_node_component
   image_transport
   cv_bridge
   OpenCV
-  ament_index_cpp::ament_index_cpp
+
 )
 
 rclcpp_components_register_nodes(camera_node_component
