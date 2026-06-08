@@ -1,8 +1,24 @@
+#!/usr/bin/env python3
+
+import os
+
+from ament_index_python.packages import get_package_share_directory
+
 from launch import LaunchDescription
 from launch_ros.actions import ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
 
+
 def generate_launch_description():
+    package_name = 'masterpi_bringup'
+    pkg_share = get_package_share_directory(package_name)
+
+    aruco_detector_params = os.path.join(
+        pkg_share,
+        'config',
+        'aruco_detector_params.yaml'
+    )
+
     container = ComposableNodeContainer(
         name='aruco_detector_container',
         namespace='',
@@ -11,14 +27,13 @@ def generate_launch_description():
         composable_node_descriptions=[
             ComposableNode(
                 package='masterpi_bringup',
-                plugin='masterpi_bringup::CameraComponent', # Ahora sí va a coincidir con el componente C++
+                plugin='masterpi_bringup::CameraComponent',
                 name='camera_node',
                 parameters=[
                     {'frame_id': 'camera_link'},
                     {'publish_rate': 15.0},
                     {'image_topic': '/camera/image_raw'},
                 ],
-                # ¡NUEVO!: Esto fuerza a la cámara a usar punteros compartidos con los vecinos del contenedor
                 extra_arguments=[{'use_intra_process_comms': True}],
             ),
             ComposableNode(
@@ -26,10 +41,11 @@ def generate_launch_description():
                 plugin='masterpi_bringup::ArucoDetectorComponent',
                 name='aruco_detector',
                 parameters=[
+                    aruco_detector_params,
                     {'image_topic': '/camera/image_raw'},
                     {'marker_id_topic': '/aruco/ids'},
+                    {'marker_detection_topic': '/aruco/detections'},
                 ],
-                # ¡NUEVO!: Esto fuerza al detector de ArUco a leer la imagen directo de la memoria compartida
                 extra_arguments=[{'use_intra_process_comms': True}],
             ),
         ],
