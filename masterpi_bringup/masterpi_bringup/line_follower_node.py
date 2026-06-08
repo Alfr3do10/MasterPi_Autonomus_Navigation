@@ -16,7 +16,7 @@ class LineFollowerNode(Node):
         super().__init__('line_follower_node')
 
         # Topics
-        self.declare_parameter('image_topic', '/camera/image_gray')
+        self.declare_parameter('image_topic', '/camera/image_raw')
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
         self.declare_parameter('debug_image_topic', '/line_follower/debug_image')
         self.declare_parameter('mask_topic', '/line_follower/mask')

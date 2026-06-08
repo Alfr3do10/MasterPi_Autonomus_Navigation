@@ -9,7 +9,8 @@ from launch.actions import DeclareLaunchArgument, TimerAction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 
-from launch_ros.actions import Node
+from launch_ros.actions import Node, ComposableNodeContainer
+from launch_ros.descriptions import ComposableNode
 
 
 def generate_launch_description():
@@ -43,10 +44,34 @@ def generate_launch_description():
     use_mock_hardware = LaunchConfiguration('use_mock_hardware')
     use_deviation = LaunchConfiguration('use_deviation')
 
-    camera_node = Node(
-        package=package_name,
-        executable='camera_node_cpp',
-        name='camera_node_cpp',
+    camera_aruco_container = ComposableNodeContainer(
+        name='camera_aruco_container',
+        namespace='',
+        package='rclcpp_components',
+        executable='component_container',
+        composable_node_descriptions=[
+            ComposableNode(
+                package='masterpi_bringup',
+                plugin='masterpi_bringup::CameraComponent',
+                name='camera_node',
+                parameters=[
+                    {'frame_id': 'camera_link'},
+                    {'publish_rate': 15.0},
+                    {'image_topic': '/camera/image_raw'},
+                ],
+                extra_arguments=[{'use_intra_process_comms': True}],
+            ),
+            ComposableNode(
+                package='masterpi_bringup',
+                plugin='masterpi_bringup::ArucoDetectorComponent',
+                name='aruco_detector',
+                parameters=[
+                    {'image_topic': '/camera/image_raw'},
+                    {'marker_id_topic': '/aruco/ids'},
+                ],
+                extra_arguments=[{'use_intra_process_comms': True}],
+            ),
+        ],
         output='screen',
         condition=IfCondition(start_camera),
     )
@@ -136,7 +161,7 @@ def generate_launch_description():
             description='If true, arm service applies servo deviation values.'
         ),
 
-        camera_node,
+        camera_aruco_container,
 
         TimerAction(
             period=1.0,
