@@ -31,14 +31,14 @@ line_follower_node:
     roi_2: [145.0, 175.0, 80.0, 240.0, 0.30]
     roi_3: [190.0, 235.0, 80.0, 240.0, 0.55]
 
-    base_speed: 0.13
+    base_speed: 0.10
 
     kp_angular: 0.80
     ki_angular: 0.00
     kd_angular: 0.05
 
-    min_linear_speed: 0.13
-    max_linear_speed: 0.13
+    min_linear_speed: 0.10
+    max_linear_speed: 0.10
 
     min_angular_speed: 0.00
     max_angular_speed: 0.55
