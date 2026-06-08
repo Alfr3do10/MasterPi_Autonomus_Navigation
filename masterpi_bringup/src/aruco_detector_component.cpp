@@ -10,6 +10,7 @@
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
+#include <opencv2/calib3d.hpp>
 
 namespace masterpi_bringup
 {
@@ -23,12 +24,20 @@ public:
     this->declare_parameter<std::string>("image_topic", "/camera/image_raw");
     this->declare_parameter<std::string>("marker_id_topic", "/aruco/ids");
     this->declare_parameter<int>("dictionary_id", cv::aruco::DICT_4X4_50);
+    this->declare_parameter<double>("marker_size", 0.06);  // Tamaño del marcador en metros (5cm)
 
     this->get_parameter("image_topic", image_topic_);
     this->get_parameter("marker_id_topic", marker_id_topic_);
+    this->get_parameter("marker_size", marker_size_);
+    
     int dictionary_id;
     this->get_parameter("dictionary_id", dictionary_id);
     dictionary_ = cv::aruco::getPredefinedDictionary(dictionary_id);
+
+    // La cámara ya está calibrada en camera_component.cpp
+    // Usamos matriz identidad ya que la imagen viene desortorsionada
+    camera_matrix_ = cv::Mat::eye(3, 3, CV_64F);
+    dist_coeffs_ = cv::Mat::zeros(1, 5, CV_64F);
 
     auto qos = rclcpp::SensorDataQoS();
     image_subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
@@ -43,8 +52,56 @@ public:
   }
 
 private:
-  // En la declaración privada y en la implementación:
-    void image_callback(const sensor_msgs::msg::Image::ConstSharedPtr msg)
+  void calculate_marker_pose(const std::vector<cv::Point2f> & marker_corners,
+                             double & distance, double & roll, double & pitch, double & yaw)
+  {
+    // Puntos 3D del marcador en su sistema de coordenadas local (cuadrado de marker_size x marker_size)
+    std::vector<cv::Point3f> object_points = {
+      cv::Point3f(-marker_size_ / 2, marker_size_ / 2, 0),
+      cv::Point3f(marker_size_ / 2, marker_size_ / 2, 0),
+      cv::Point3f(marker_size_ / 2, -marker_size_ / 2, 0),
+      cv::Point3f(-marker_size_ / 2, -marker_size_ / 2, 0)
+    };
+
+    cv::Mat rvec, tvec;
+    bool success = cv::solvePnP(
+      object_points,
+      marker_corners,
+      camera_matrix_,
+      dist_coeffs_,
+      rvec,
+      tvec,
+      false,
+      cv::SOLVEPNP_IPPE_SQUARE
+    );
+
+    if (success) {
+      // Distancia: norma del vector de traslación (tvec)
+      distance = cv::norm(tvec);
+
+      // Convertir vector de rotación a matriz de rotación
+      cv::Mat rotation_matrix;
+      cv::Rodrigues(rvec, rotation_matrix);
+
+      // Extraer ángulos de Euler de la matriz de rotación
+      // Usando la convención ZYX (yaw-pitch-roll)
+      roll = std::atan2(rotation_matrix.at<double>(2, 1), rotation_matrix.at<double>(2, 2));
+      pitch = std::asin(-rotation_matrix.at<double>(2, 0));
+      yaw = std::atan2(rotation_matrix.at<double>(1, 0), rotation_matrix.at<double>(0, 0));
+
+      // Convertir de radianes a grados
+      roll = roll * 180.0 / M_PI;
+      pitch = pitch * 180.0 / M_PI;
+      yaw = yaw * 180.0 / M_PI;
+    } else {
+      distance = -1.0;
+      roll = 0.0;
+      pitch = 0.0;
+      yaw = 0.0;
+    }
+  }
+
+  void image_callback(const sensor_msgs::msg::Image::ConstSharedPtr msg)
   {
     try {
       std::string encoding = msg->encoding;
@@ -88,6 +145,18 @@ private:
           }
         }
         RCLCPP_INFO(this->get_logger(), "Aruco markers detectados: %s", ids_string.c_str());
+
+        // Calcular distancia y orientación para cada marcador
+        for (size_t i = 0; i < ids.size(); ++i) {
+          double distance, roll, pitch, yaw;
+          calculate_marker_pose(corners[i], distance, roll, pitch, yaw);
+          
+          if (distance > 0) {
+            RCLCPP_INFO(this->get_logger(), 
+              "Marcador ID: %d | Distancia: %.3f m | Roll: %.1f° | Pitch: %.1f° | Yaw: %.1f°",
+              ids[i], distance, roll, pitch, yaw);
+          }
+        }
       }
     } catch (const cv_bridge::Exception & e) {
       RCLCPP_ERROR(this->get_logger(), "cv_bridge error: %s", e.what());
@@ -101,6 +170,9 @@ private:
   std::string image_topic_;
   std::string marker_id_topic_;
   cv::Ptr<cv::aruco::Dictionary> dictionary_;
+  cv::Mat camera_matrix_;
+  cv::Mat dist_coeffs_;
+  double marker_size_;
 };
 
 }  // namespace masterpi_bringup

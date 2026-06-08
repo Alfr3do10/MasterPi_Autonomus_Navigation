@@ -1,0 +1,6 @@
+aruco_detector_component:
+  ros__parameters:
+    image_topic: "/camera/image_raw"
+    marker_id_topic: "/aruco/ids"
+    dictionary_id: 10  # cv::aruco::DICT_4X4_50
+    marker_size: 0.05  # Tamaño del marcador en metros (5cm)
