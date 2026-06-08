@@ -33,14 +33,18 @@ find_package(image_transport REQUIRED)
 find_package(OpenCV REQUIRED)
 
 find_package(rosidl_default_generators REQUIRED)
+find_package(rosidl_default_runtime REQUIRED)
 
 # ==============================================================================
 # INTERFACES ROS 2
 # ==============================================================================
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/ArucoMarker.msg"
+  "msg/ArucoMarkerArray.msg"
   "srv/RunArmMotion.srv"
 )
+rosidl_get_typesupport_target(rosidl_typesupport_cpp_target ${PROJECT_NAME} rosidl_typesupport_cpp)
 
 # ==============================================================================
 # CONFIGURACIÓN DE C++ (COMPONENTES)
@@ -63,6 +67,12 @@ rclcpp_components_register_nodes(camera_node_component
 
 # 3. Componente C++ para detección de ArUco
 add_library(aruco_detector_component SHARED src/aruco_detector_component.cpp)
+target_include_directories(aruco_detector_component PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp>
+)
+target_link_libraries(aruco_detector_component
+  ${rosidl_typesupport_cpp_target}
+)
 ament_target_dependencies(aruco_detector_component
   rclcpp
   rclcpp_components
@@ -70,6 +80,7 @@ ament_target_dependencies(aruco_detector_component
   std_msgs
   cv_bridge
   OpenCV
+  rosidl_default_runtime
 )
 
 rclcpp_components_register_nodes(aruco_detector_component

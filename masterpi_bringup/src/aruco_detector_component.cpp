@@ -7,6 +7,7 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/image_encodings.hpp>
 #include <std_msgs/msg/int32_multi_array.hpp>
+#include <masterpi_bringup/msg/aruco_marker_array.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
@@ -46,7 +47,7 @@ public:
       std::bind(&ArucoDetectorComponent::image_callback, this, std::placeholders::_1)
     );
 
-    marker_publisher_ = this->create_publisher<std_msgs::msg::Int32MultiArray>(marker_id_topic_, 10);
+    marker_publisher_ = this->create_publisher<masterpi_bringup::msg::ArucoMarkerArray>(marker_id_topic_, 10);
 
     RCLCPP_INFO(this->get_logger(), "ArucoDetectorComponent listo. Subscrito a: %s", image_topic_.c_str());
   }
@@ -119,30 +120,34 @@ private:
       cv::aruco::detectMarkers(gray, dictionary_, corners, ids);
 
       if (!ids.empty()) {
-        std_msgs::msg::Int32MultiArray marker_msg;
-        marker_msg.data = ids;
-        marker_publisher_->publish(marker_msg);
+        masterpi_bringup::msg::ArucoMarkerArray marker_msg;
+        marker_msg.markers.reserve(ids.size());
 
         std::string ids_string;
         for (size_t i = 0; i < ids.size(); ++i) {
+          double distance, yaw;
+          calculate_marker_pose(corners[i], distance, yaw);
+
+          masterpi_bringup::msg::ArucoMarker marker;
+          marker.id = ids[i];
+          marker.distance = distance;
+          marker.yaw = yaw;
+          marker_msg.markers.push_back(marker);
+
           ids_string += std::to_string(ids[i]);
           if (i + 1 < ids.size()) {
             ids_string += ", ";
           }
-        }
-        RCLCPP_INFO(this->get_logger(), "Aruco markers detectados: %s", ids_string.c_str());
 
-        // Calcular distancia y orientación para cada marcador
-        for (size_t i = 0; i < ids.size(); ++i) {
-          double distance, yaw;
-          calculate_marker_pose(corners[i], distance, yaw);
-          
           if (distance > 0) {
             RCLCPP_INFO(this->get_logger(), 
-              "Marcador ID: %d | Distancia: %.3f m| Yaw: %.1f°",
+              "Marcador ID: %d | Distancia: %.3f m | Yaw: %.1f°",
               ids[i], distance, yaw);
           }
         }
+
+        marker_publisher_->publish(marker_msg);
+        RCLCPP_INFO(this->get_logger(), "Aruco markers detectados: %s", ids_string.c_str());
       }
     } catch (const cv_bridge::Exception & e) {
       RCLCPP_ERROR(this->get_logger(), "cv_bridge error: %s", e.what());
@@ -154,7 +159,7 @@ private:
   
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_subscription_;
-  rclcpp::Publisher<std_msgs::msg::Int32MultiArray>::SharedPtr marker_publisher_;
+  rclcpp::Publisher<masterpi_bringup::msg::ArucoMarkerArray>::SharedPtr marker_publisher_;
   std::string image_topic_;
   std::string marker_id_topic_;
   cv::Ptr<cv::aruco::Dictionary> dictionary_;
