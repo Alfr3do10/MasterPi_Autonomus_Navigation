@@ -71,7 +71,7 @@ ament_target_dependencies(aruco_detector_component
   std_msgs
   cv_bridge
   OpenCV
-  ament_index_cpp::ament_index_cpp
+  
 )
 
 rclcpp_components_register_nodes(aruco_detector_component
