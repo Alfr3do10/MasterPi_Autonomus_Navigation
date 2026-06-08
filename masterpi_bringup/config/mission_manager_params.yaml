@@ -37,7 +37,7 @@ mission_manager_node:
     # --------------------------------------------------------------------------
     # Giro 180 aproximado
     # --------------------------------------------------------------------------
-    turn_angular_speed: 1.2
+    turn_angular_speed: 1.28
     turn_duration_s: 1.8
     turn_direction: 1.0
     command_rate_hz: 20.0
