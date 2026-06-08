@@ -123,7 +123,7 @@ install(
 
 install(
   PROGRAMS
-    masterpi_bringup/line_follower_node.pyx
+    masterpi_bringup/line_follower_node.py
     masterpi_bringup/line_follower_pose_node.py
     masterpi_bringup/arm_motion_node.py
     masterpi_bringup/arm_motion_service_node.py
