@@ -11,7 +11,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
 #include <opencv2/calib3d.hpp>
-
+#include <ament_index_cpp/get_package_share_directory.hpp>
 namespace masterpi_bringup
 {
 
@@ -25,7 +25,7 @@ public:
     this->declare_parameter<std::string>("marker_id_topic", "/aruco/ids");
     this->declare_parameter<int>("dictionary_id", cv::aruco::DICT_4X4_50);
     this->declare_parameter<double>("marker_size", 0.06);  // Tamaño del marcador en metros (5cm)
-    this->declare_parameter<std::string>("calibration_file", "/config/calibration/calibration_param.yaml");
+    this->declare_parameter<std::string>("calibration_file", "");
 
     this->get_parameter("image_topic", image_topic_);
     this->get_parameter("marker_id_topic", marker_id_topic_);
@@ -37,27 +37,36 @@ public:
     int dictionary_id;
     this->get_parameter("dictionary_id", dictionary_id);
     dictionary_ = cv::aruco::getPredefinedDictionary(dictionary_id);
+
+    if (calibration_file.empty()) {
+      try {
+        std::string pkg_share = ament_index_cpp::get_package_share_directory("masterpi_bringup");
+        calibration_file = pkg_share + "/config/calibration/calibration_param.yaml";
+      } catch (const std::exception & e) {
+        RCLCPP_ERROR(this->get_logger(), "No se encontró el share del paquete: %s", e.what());
+      }
+    }
     // 2. Cargar los parámetros desde el archivo YAML
     camera_matrix_ = cv::Mat::eye(3, 3, CV_64F); // Valor por defecto por si falla    
     dist_coeffs_ = cv::Mat::zeros(1, 5, CV_64F);
 
     if (!calibration_file.empty()) {
-    try {
-      cv::FileStorage fs(calibration_file, cv::FileStorage::READ);
-      if (fs.isOpened()) {
-        // Reemplaza "camera_matrix" por el nombre exacto que tenga la clave en tu YAML
-        fs["camera_matrix"] >> camera_matrix_; 
-        fs.release();
-        RCLCPP_INFO(this->get_logger(), "Matriz de cámara cargada con éxito desde: %s", calibration_file.c_str());
-      } else {
-        RCLCPP_ERROR(this->get_logger(), "No se pudo abrir el archivo de calibración: %s", calibration_file.c_str());
+      try {
+        cv::FileStorage fs(calibration_file, cv::FileStorage::READ);
+        if (fs.isOpened()) {
+          // Reemplaza "camera_matrix" por el nombre exacto que tenga la clave en tu YAML
+          fs["camera_matrix"] >> camera_matrix_; 
+          fs.release();
+          RCLCPP_INFO(this->get_logger(), "Matriz de cámara cargada con éxito desde: %s", calibration_file.c_str());
+        } else {
+          RCLCPP_ERROR(this->get_logger(), "No se pudo abrir el archivo de calibración: %s", calibration_file.c_str());
+        }
+      } catch (const std::exception & e) {
+        RCLCPP_ERROR(this->get_logger(), "Error al parsear el archivo YAML: %s", e.what());
       }
-    } catch (const std::exception & e) {
-      RCLCPP_ERROR(this->get_logger(), "Error al parsear el archivo YAML: %s", e.what());
+    } else {
+      RCLCPP_WARN(this->get_logger(), "No se proporcionó archivo de calibración. ¡El cálculo de pose fallará o será impreciso!");
     }
-  } else {
-    RCLCPP_WARN(this->get_logger(), "No se proporcionó archivo de calibración. ¡El cálculo de pose fallará o será impreciso!");
-  }
 
     auto qos = rclcpp::SensorDataQoS();
     image_subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
@@ -103,11 +112,14 @@ private:
       cv::Mat rotation_matrix;
       cv::Rodrigues(rvec, rotation_matrix);
 
-      // Extraer ángulos de Euler de la matriz de rotación
-      // Usando la convención ZYX (yaw-pitch-roll)
-
-      yaw = std::atan2(rotation_matrix.at<double>(1, 0), rotation_matrix.at<double>(0, 0));
+      // Calculo de Yaw
+      yaw = std::atan2(-rotation_matrix.at<double>(0, 2), -rotation_matrix.at<double>(2, 2));
       yaw = yaw * 180.0 / M_PI;
+
+      // Normalizar entre -180° y 180°
+      if (yaw > 180.0) yaw -= 360.0;
+      if (yaw < -180.0) yaw += 360.0;
+      
     } else {
       distance = -1.0;
       yaw = 0.0;
