@@ -24,7 +24,7 @@ public:
     this->declare_parameter<std::string>("image_topic", "/camera/image_raw");
     this->declare_parameter<std::string>("marker_id_topic", "/aruco/ids");
     this->declare_parameter<int>("dictionary_id", cv::aruco::DICT_4X4_50);
-    this->declare_parameter<double>("marker_size", 0.06);  // Tamaño del marcador en metros (5cm)
+    this->declare_parameter<double>("marker_size", 0.06);  // Tamaño del marcador en metros (6cm)
     this->declare_parameter<std::string>("calibration_file", "");
 
     this->get_parameter("image_topic", image_topic_);
@@ -76,6 +76,8 @@ public:
       RCLCPP_ERROR(this->get_logger(), "Error al parsear el archivo YAML: %s", e.what());
     }
   }
+  
+  RCLCPP_INFO(this->get_logger(), "Focal Real fx: %.2f, cx: %.2f", camera_matrix_.at<double>(0,0), camera_matrix_.at<double>(0,2));
 
     auto qos = rclcpp::SensorDataQoS();
     image_subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
