@@ -3,6 +3,7 @@
 import sys
 import threading
 import time
+from enum import Enum
 
 import rclpy
 from rclpy.node import Node
@@ -11,6 +12,14 @@ from geometry_msgs.msg import Twist
 from std_msgs.msg import Bool, Float32MultiArray
 
 from masterpi_bringup.srv import RunArmMotion
+
+
+class StationState(Enum):
+    """Station sequence state machine."""
+    SEGUIDOR_LINEA = 1      # State 1: Line following mode (default)
+    POSICIONAMIENTO = 2     # State 2: Positioning with ArUco
+    ACCION_ESTACION = 3     # State 3: Arm action (pickup/drop based on ID)
+    RETORNO = 4             # State 4: 180° turn and return to line following
 
 
 class MissionManagerNode(Node):
@@ -22,7 +31,6 @@ class MissionManagerNode(Node):
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
         self.declare_parameter('line_follower_enabled_topic', '/line_follower/enabled')
         self.declare_parameter('arm_service_name', '/arm/run_motion')
-        self.declare_parameter('initial_has_cube', False)
         self.declare_parameter('set_carry_pose_on_start', True)
         self.declare_parameter('enable_line_follower_on_start', True)
         self.declare_parameter('stop_before_action_s', 0.50)
@@ -36,7 +44,7 @@ class MissionManagerNode(Node):
 
         self.declare_parameter('aruco_trigger_enabled', True)
         self.declare_parameter('aruco_detections_topic', '/aruco/detections')
-        self.declare_parameter('valid_aruco_ids', [0])
+        self.declare_parameter('valid_aruco_ids', [1, 3])
         self.declare_parameter('aruco_trigger_max_distance_m', 1.20)
         self.declare_parameter('aruco_trigger_confirmations', 3)
         self.declare_parameter('aruco_detection_timeout_s', 0.60)
@@ -54,7 +62,7 @@ class MissionManagerNode(Node):
 
         self.declare_parameter('require_aruco_positioning', True)
         self.declare_parameter('approach_target_distance_m', 0.25)
-        self.declare_parameter('approach_distance_tolerance_m', 0.02)
+        self.declare_parameter('approach_distance_tolerance_m', 0.015)
         self.declare_parameter('approach_max_duration_s', 8.0)
         self.declare_parameter('approach_allow_reverse', False)
         self.declare_parameter('approach_forward_speed', 0.08)
@@ -73,7 +81,6 @@ class MissionManagerNode(Node):
         self.cmd_vel_topic = self.get_str('cmd_vel_topic')
         self.line_follower_enabled_topic = self.get_str('line_follower_enabled_topic')
         self.arm_service_name = self.get_str('arm_service_name')
-        self.has_cube = self.get_bool('initial_has_cube')
         self.set_carry_pose_on_start = self.get_bool('set_carry_pose_on_start')
         self.enable_line_follower_on_start = self.get_bool('enable_line_follower_on_start')
         self.stop_before_action_s = self.get_float('stop_before_action_s')
@@ -155,6 +162,7 @@ class MissionManagerNode(Node):
         self.current_confirmation_count = 0
         self.last_station_trigger_time = 0.0
         self.ignored_marker_until = {}
+        self.station_state = StationState.SEGUIDOR_LINEA
 
         self.lock = threading.Lock()
 
@@ -381,13 +389,25 @@ class MissionManagerNode(Node):
         )
 
     def station_sequence_worker(self):
+        """Station sequence state machine."""
         marker_id_for_ignore = self.active_station_marker_id
+        current_state = StationState.POSICIONAMIENTO
 
         try:
             self.get_logger().info('========================================')
             self.get_logger().info('Station sequence started.')
+            self.get_logger().info(
+                f'Detected ArUco ID: {marker_id_for_ignore}'
+            )
 
+            # State 1: SEGUIDOR_LINEA -> disable line follower for station
             self.set_line_follower_enabled(False)
+
+            # State 2: POSICIONAMIENTO
+            current_state = StationState.POSICIONAMIENTO
+            self.get_logger().info(
+                f'Entering state: {current_state.name}'
+            )
 
             if self.require_aruco_positioning:
                 positioning_ok = self.position_with_aruco()
@@ -396,27 +416,39 @@ class MissionManagerNode(Node):
                     self.get_logger().warn(
                         'ArUco positioning incomplete. Continuing with arm action.'
                     )
+            else:
+                self.get_logger().info('ArUco positioning disabled.')
+
+            # State 3: ACCION_ESTACION
+            current_state = StationState.ACCION_ESTACION
+            self.get_logger().info(
+                f'Entering state: {current_state.name}'
+            )
 
             self.stop_robot(self.stop_before_action_s)
 
-            if self.has_cube:
-                arm_motion = 'drop'
-                self.get_logger().info('Robot has cube -> running DROP.')
-            else:
-                arm_motion = 'pickup'
-                self.get_logger().info('Robot has no cube -> running PICKUP.')
+            # Determine arm motion based on detected ArUco ID
+            arm_motion = self._determine_arm_motion(marker_id_for_ignore)
+            self.get_logger().info(
+                f'ArUco ID {marker_id_for_ignore} detected -> running {arm_motion.upper()}.'
+            )
 
             success = self.call_arm_motion(arm_motion)
 
             if success:
-                self.has_cube = not self.has_cube
                 self.get_logger().info(
-                    f'Arm action finished. has_cube={self.has_cube}'
+                    f'Arm action finished successfully. Motion: {arm_motion}'
                 )
             else:
                 self.get_logger().error(
-                    'Arm action failed. Keeping previous has_cube state.'
+                    f'Arm action failed. Motion: {arm_motion}'
                 )
+
+            # State 4: RETORNO
+            current_state = StationState.RETORNO
+            self.get_logger().info(
+                f'Entering state: {current_state.name}'
+            )
 
             self.stop_robot(self.stop_after_arm_action_s)
 
@@ -424,6 +456,7 @@ class MissionManagerNode(Node):
 
             self.stop_robot(self.stop_after_turn_s)
 
+            # Mark this ArUco ID as ignored temporarily
             if marker_id_for_ignore is not None:
                 with self.lock:
                     self.ignored_marker_until[int(marker_id_for_ignore)] = (
@@ -435,15 +468,22 @@ class MissionManagerNode(Node):
                     f'{self.ignore_same_marker_s:.1f} s.'
                 )
 
+            # Back to State 1: SEGUIDOR_LINEA
+            current_state = StationState.SEGUIDOR_LINEA
             self.set_line_follower_enabled(True)
 
+            self.get_logger().info(
+                f'Returning to state: {current_state.name}'
+            )
             self.get_logger().info(
                 'Station sequence finished. FOLLOW_LINE mode active.'
             )
             self.get_logger().info('========================================')
 
         except Exception as exc:
-            self.get_logger().error(f'Station sequence failed: {exc}')
+            self.get_logger().error(
+                f'Station sequence failed in state {current_state.name}: {exc}'
+            )
             self.stop_robot(duration_s=0.50)
             self.set_line_follower_enabled(False)
 
@@ -451,6 +491,23 @@ class MissionManagerNode(Node):
             with self.lock:
                 self.busy = False
                 self.active_station_marker_id = None
+                self.station_state = StationState.SEGUIDOR_LINEA
+
+    def _determine_arm_motion(self, marker_id):
+        """
+        Determine arm motion (pickup or drop) based on ArUco marker ID.
+        - ArUco ID 3: pickup
+        - ArUco ID 1: drop
+        """
+        if marker_id == 3:
+            return 'pickup'
+        elif marker_id == 1:
+            return 'drop'
+        else:
+            self.get_logger().warn(
+                f'Unknown ArUco ID {marker_id}. Defaulting to pickup.'
+            )
+            return 'pickup'
 
     def position_with_aruco(self):
         self.get_logger().info('Starting ArUco positioning.')
