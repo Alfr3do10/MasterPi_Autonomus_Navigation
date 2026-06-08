@@ -1,42 +1,101 @@
 mission_manager_node:
   ros__parameters:
-    # Mission control mode.
-    # For now, Enter simulates that ArUco detected the station.
+    # --------------------------------------------------------------------------
+    # Modo de prueba
+    # --------------------------------------------------------------------------
     manual_enter_trigger: true
-
-    # Optional topic trigger.
-    # This lets us simulate station arrival from another terminal too.
     station_trigger_topic: /mission/station_trigger
 
-    # Topics controlled by the mission manager.
+    # --------------------------------------------------------------------------
+    # Tópicos principales
+    # --------------------------------------------------------------------------
     cmd_vel_topic: /cmd_vel
     line_follower_enabled_topic: /line_follower/enabled
 
-    # Arm service.
+    # --------------------------------------------------------------------------
+    # Servicio del brazo
+    # --------------------------------------------------------------------------
     arm_service_name: /arm/run_motion
 
-    # Initial cube state.
-    # false = robot starts without cube, so first station runs pickup.
-    # true  = robot starts with cube, so first station runs drop.
+    # false = empieza sin cubo, entonces la primera estación hace pickup.
+    # true = empieza con cubo, entonces la primera estación hace drop.
     initial_has_cube: false
 
-    # Startup behavior.
+    # --------------------------------------------------------------------------
+    # Inicio del robot
+    # --------------------------------------------------------------------------
     set_carry_pose_on_start: true
     enable_line_follower_on_start: true
 
-    # Stop timing before and after station actions.
+    # --------------------------------------------------------------------------
+    # Pausas
+    # --------------------------------------------------------------------------
     stop_before_action_s: 0.50
     stop_after_arm_action_s: 0.50
     stop_after_turn_s: 0.50
 
-    # Approximate 180-degree turn.
-    # These values are calibrated experimentally because there are no wheel encoders.
+    # --------------------------------------------------------------------------
+    # Giro 180 aproximado
+    # --------------------------------------------------------------------------
     turn_angular_speed: 1.2
     turn_duration_s: 1.8
     turn_direction: 1.0
-
-    # Command publish rate during timed maneuvers.
     command_rate_hz: 20.0
-
-    # Service timeout.
     arm_service_timeout_s: 20.0
+
+    # --------------------------------------------------------------------------
+    # ArUco trigger
+    # /aruco/detections publica:
+    # [id, yaw_error_deg, distance_error_m]
+    #
+    # distance_error_m = current_distance_m - approach_target_distance_m
+    # Ejemplo:
+    #   0.18  -> aún faltan 18 cm para llegar
+    #   0.00  -> está a la distancia correcta
+    #  -0.05  -> se pasó 5 cm
+    # --------------------------------------------------------------------------
+    aruco_trigger_enabled: true
+    aruco_detections_topic: /aruco/detections
+
+    valid_aruco_ids: [0]
+
+    aruco_detection_group_size: 3
+    aruco_id_index: 0
+    aruco_yaw_error_index: 1
+    aruco_distance_index: 2
+
+    # Usa "error" si el detector publica distance_error_m.
+    # Usa "absolute" si el detector publica distancia absoluta en metros.
+    aruco_distance_mode: error
+
+    aruco_trigger_max_distance_m: 1.20
+    aruco_trigger_confirmations: 3
+    aruco_detection_timeout_s: 0.60
+
+    station_cooldown_s: 4.0
+    ignore_same_marker_s: 6.0
+
+    # --------------------------------------------------------------------------
+    # Posicionamiento con ArUco antes de pickup/drop
+    # --------------------------------------------------------------------------
+    require_aruco_positioning: true
+
+    approach_target_distance_m: 0.25
+    approach_distance_tolerance_m: 0.02
+    approach_max_duration_s: 8.0
+    approach_allow_reverse: false
+
+    approach_forward_speed: 0.08
+    approach_min_forward_speed: 0.035
+    approach_distance_kp: 0.60
+
+    approach_yaw_kp: 0.020
+    approach_max_angular_speed: 0.45
+
+    align_yaw_tolerance_deg: 3.0
+    align_max_duration_s: 4.0
+    align_yaw_kp: 0.030
+    align_max_angular_speed: 0.45
+
+    # Si el robot gira al lado contrario al corregir yaw, cambia a 1.0.
+    yaw_control_sign: -1.0
