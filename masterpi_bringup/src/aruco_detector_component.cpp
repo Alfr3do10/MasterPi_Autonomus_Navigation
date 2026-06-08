@@ -104,30 +104,16 @@ private:
   void image_callback(const sensor_msgs::msg::Image::ConstSharedPtr msg)
   {
     try {
-      std::string encoding = msg->encoding;
-      if (encoding != sensor_msgs::image_encodings::BGR8 &&
-          encoding != sensor_msgs::image_encodings::RGB8 &&
-          encoding != sensor_msgs::image_encodings::MONO8) {
-        encoding = sensor_msgs::image_encodings::BGR8;
-      }
+      // 1. Apuntamos DIRECTAMENTE a la memoria compartida en formato MONO8 (Gris)
+      // Al coincidir con lo que publica la cámara, cv_bridge NO COPIA NADA.
+      cv_bridge::CvImageConstPtr cv_ptr = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::MONO8);
+      const cv::Mat & gray = cv_ptr->image; 
 
-      cv_bridge::CvImageConstPtr cv_ptr = cv_bridge::toCvShare(msg, encoding);
-      const cv::Mat & frame = cv_ptr->image;
-      if (frame.empty()) {
+      if (gray.empty()) {
         return;
       }
 
-      cv::Mat gray;
-      if (frame.channels() == 3) {
-        if (encoding == sensor_msgs::image_encodings::RGB8) {
-          cv::cvtColor(frame, gray, cv::COLOR_RGB2GRAY);
-        } else {
-          cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-        }
-      } else {
-        gray = frame;
-      }
-
+      // 2. Directo a la detección (Ya no necesitas cv::cvtColor)
       std::vector<int> ids;
       std::vector<std::vector<cv::Point2f>> corners;
       cv::aruco::detectMarkers(gray, dictionary_, corners, ids);
@@ -164,6 +150,8 @@ private:
       RCLCPP_ERROR(this->get_logger(), "Aruco detector error: %s", e.what());
     }
   }
+
+  
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_subscription_;
   rclcpp::Publisher<std_msgs::msg::Int32MultiArray>::SharedPtr marker_publisher_;
