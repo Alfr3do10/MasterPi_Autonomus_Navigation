@@ -37,8 +37,8 @@ line_follower_node:
     ki_angular: 0.00
     kd_angular: 0.05
 
-    min_linear_speed: 0.10
-    max_linear_speed: 0.10
+    min_linear_speed: 0.13
+    max_linear_speed: 0.13
 
     min_angular_speed: 0.00
     max_angular_speed: 0.55
