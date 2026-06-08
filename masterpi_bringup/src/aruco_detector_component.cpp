@@ -51,22 +51,31 @@ public:
     dist_coeffs_ = cv::Mat::zeros(1, 5, CV_64F);
 
     if (!calibration_file.empty()) {
-      try {
-        cv::FileStorage fs(calibration_file, cv::FileStorage::READ);
-        if (fs.isOpened()) {
-          // Reemplaza "camera_matrix" por el nombre exacto que tenga la clave en tu YAML
-          fs["camera_matrix"] >> camera_matrix_; 
-          fs.release();
-          RCLCPP_INFO(this->get_logger(), "Matriz de cámara cargada con éxito desde: %s", calibration_file.c_str());
-        } else {
-          RCLCPP_ERROR(this->get_logger(), "No se pudo abrir el archivo de calibración: %s", calibration_file.c_str());
-        }
-      } catch (const std::exception & e) {
-        RCLCPP_ERROR(this->get_logger(), "Error al parsear el archivo YAML: %s", e.what());
+    try {
+      cv::FileStorage fs(calibration_file, cv::FileStorage::READ);
+      if (fs.isOpened()) {
+        fs["camera_matrix"] >> camera_matrix_; 
+        fs.release();
+        
+        // --- AJUSTE POR CAMBIO DE RESOLUCIÓN (De 640x480 a 320x240) ---
+        double scale_factor = 0.5; // Cambia esto si usas otra escala
+        
+        camera_matrix_.at<double>(0, 0) *= scale_factor; // fx
+        camera_matrix_.at<double>(1, 1) *= scale_factor; // fy
+        camera_matrix_.at<double>(0, 2) *= scale_factor; // cx
+        camera_matrix_.at<double>(1, 2) *= scale_factor; // cy
+        // --------------------------------------------------------------
+
+        RCLCPP_INFO(this->get_logger(), 
+          "Matriz de cámara cargada y escalada (x%.2f) con éxito desde: %s", 
+          scale_factor, calibration_file.c_str());
+      } else {
+        RCLCPP_ERROR(this->get_logger(), "No se pudo abrir el archivo de calibración: %s", calibration_file.c_str());
       }
-    } else {
-      RCLCPP_WARN(this->get_logger(), "No se proporcionó archivo de calibración. ¡El cálculo de pose fallará o será impreciso!");
+    } catch (const std::exception & e) {
+      RCLCPP_ERROR(this->get_logger(), "Error al parsear el archivo YAML: %s", e.what());
     }
+  }
 
     auto qos = rclcpp::SensorDataQoS();
     image_subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
@@ -119,7 +128,7 @@ private:
       // Normalizar entre -180° y 180°
       if (yaw > 180.0) yaw -= 360.0;
       if (yaw < -180.0) yaw += 360.0;
-      
+
     } else {
       distance = -1.0;
       yaw = 0.0;
