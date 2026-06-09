@@ -597,7 +597,6 @@ class LineFollowerNode(Node):
 
         if not self.enabled:
             self._reset_controller_state()
-            twist = Twist()
 
             status_linear_x = 0.0
             status_angular_z = 0.0
@@ -626,28 +625,30 @@ class LineFollowerNode(Node):
             status_total_weight
         )
 
-        self.cmd_pub.publish(twist)
+        return
 
-        if not self.publish_debug:
-            return
+        # self.cmd_pub.publish(twist)
 
-        now_debug = self.get_clock().now().nanoseconds / 1e9
+        # if not self.publish_debug:
+        #     return
 
-        if self.debug_publish_rate > 0.0 and self.last_debug_pub_time is not None:
-            min_period = 1.0 / self.debug_publish_rate
+        # now_debug = self.get_clock().now().nanoseconds / 1e9
 
-            if now_debug - self.last_debug_pub_time < min_period:
-                return
+        # if self.debug_publish_rate > 0.0 and self.last_debug_pub_time is not None:
+        #     min_period = 1.0 / self.debug_publish_rate
 
-        self.last_debug_pub_time = now_debug
+        #     if now_debug - self.last_debug_pub_time < min_period:
+        #         return
 
-        mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
-        mask_msg.header = msg.header
-        self.mask_pub.publish(mask_msg)
+        # self.last_debug_pub_time = now_debug
 
-        debug_msg = self.bridge.cv2_to_imgmsg(debug, encoding='bgr8')
-        debug_msg.header = msg.header
-        self.debug_pub.publish(debug_msg)
+        # mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
+        # mask_msg.header = msg.header
+        # self.mask_pub.publish(mask_msg)
+
+        # debug_msg = self.bridge.cv2_to_imgmsg(debug, encoding='bgr8')
+        # debug_msg.header = msg.header
+        # self.debug_pub.publish(debug_msg)
 
 
 def main(args=None):
