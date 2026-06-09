@@ -70,7 +70,7 @@ def generate_launch_description():
                 name='camera_node',
                 parameters=[
                     {'frame_id': 'camera_link'},
-                    {'publish_rate': 15.0},
+                    {'publish_rate': 20.0},
                     {'image_topic': '/camera/image_raw'},
                 ],
                 extra_arguments=[{'use_intra_process_comms': True}],
