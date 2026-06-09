@@ -137,8 +137,8 @@ class LineFollowerNode(Node):
         self.debug_pub = None
         self.mask_pub = None
 
-        if self.publish_debug:
-            self.debug_pub = self.create_publisher(Image, self.debug_image_topic, 10)
+        # if self.publish_debug:
+        #     self.debug_pub = self.create_publisher(Image, self.debug_image_topic, 10)
         #     self.mask_pub = self.create_publisher(Image, self.mask_topic, 10)
 
         self.enabled_sub = self.create_subscription(
