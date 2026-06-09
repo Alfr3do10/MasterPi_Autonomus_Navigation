@@ -239,6 +239,9 @@ class LineFollowerNode(Node):
 
         if not self.enabled:
             self._reset_controller_state()
+
+            # Publish one immediate stop only when disabling.
+            # After this, image_callback will NOT keep publishing zeros.
             self.cmd_pub.publish(Twist())
 
     def _reset_controller_state(self):
@@ -612,6 +615,24 @@ class LineFollowerNode(Node):
                 2
             )
 
+            self._publish_status(
+                detected,
+                status_raw_center_x,
+                status_filtered_center_x,
+                status_error_norm,
+                status_linear_x,
+                status_angular_z,
+                total_area,
+                roi_areas,
+                status_filter,
+                status_total_weight
+            )
+
+            if self.publish_debug:
+                self._publish_debug_images(mask, debug, msg)
+
+            return
+
         self._publish_status(
             detected,
             status_raw_center_x,
@@ -625,30 +646,34 @@ class LineFollowerNode(Node):
             status_total_weight
         )
 
-        return
+        self.cmd_pub.publish(twist)
 
-        # self.cmd_pub.publish(twist)
+        if not self.publish_debug:
+            return
 
-        # if not self.publish_debug:
-        #     return
+        self._publish_debug_images(mask, debug, msg)
 
-        # now_debug = self.get_clock().now().nanoseconds / 1e9
+    def _publish_debug_images(self, mask, debug, source_msg):
+        if self.debug_pub is None or self.mask_pub is None:
+            return
 
-        # if self.debug_publish_rate > 0.0 and self.last_debug_pub_time is not None:
-        #     min_period = 1.0 / self.debug_publish_rate
+        now_debug = self.get_clock().now().nanoseconds / 1e9
 
-        #     if now_debug - self.last_debug_pub_time < min_period:
-        #         return
+        if self.debug_publish_rate > 0.0 and self.last_debug_pub_time is not None:
+            min_period = 1.0 / self.debug_publish_rate
 
-        # self.last_debug_pub_time = now_debug
+            if now_debug - self.last_debug_pub_time < min_period:
+                return
 
-        # mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
-        # mask_msg.header = msg.header
-        # self.mask_pub.publish(mask_msg)
+        self.last_debug_pub_time = now_debug
 
-        # debug_msg = self.bridge.cv2_to_imgmsg(debug, encoding='bgr8')
-        # debug_msg.header = msg.header
-        # self.debug_pub.publish(debug_msg)
+        mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
+        mask_msg.header = source_msg.header
+        self.mask_pub.publish(mask_msg)
+
+        debug_msg = self.bridge.cv2_to_imgmsg(debug, encoding='bgr8')
+        debug_msg.header = source_msg.header
+        self.debug_pub.publish(debug_msg)
 
 
 def main(args=None):
