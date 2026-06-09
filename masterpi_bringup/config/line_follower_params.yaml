@@ -33,9 +33,9 @@ line_follower_node:
 
     base_speed: 0.10
 
-    kp_angular: 0.815
-    ki_angular: 0.01
-    kd_angular: 0.059
+    kp_angular: 0.81
+    ki_angular: 0.025
+    kd_angular: 0.056
 
     min_linear_speed: 0.13
     max_linear_speed: 0.13
