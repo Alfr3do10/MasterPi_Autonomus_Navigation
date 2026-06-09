@@ -8,7 +8,7 @@ line_follower_node:
     enabled_topic: /line_follower/enabled
 
     start_enabled: true
-    publish_debug: true
+    # publish_debug: true
     debug_publish_rate: 3.0
 
     # Para línea blanca/amarilla clara con imagen mono o brillo.
@@ -27,10 +27,9 @@ line_follower_node:
     v_max: 255
 
     # ROIs ajustadas a imagen 320x240.
-    # Se suben ligeramente en Y para capturar la línea un poco más arriba.
-    roi_1: [95.0, 120.0, 80.0, 240.0, 0.15]
-    roi_2: [135.0, 165.0, 80.0, 240.0, 0.30]
-    roi_3: [180.0, 225.0, 80.0, 240.0, 0.55]
+    roi_1: [105.0, 130.0, 80.0, 240.0, 0.15]
+    # roi_2: [145.0, 175.0, 80.0, 240.0, 0.30]
+    # roi_3: [190.0, 235.0, 80.0, 240.0, 0.55]
 
     base_speed: 0.13
 
