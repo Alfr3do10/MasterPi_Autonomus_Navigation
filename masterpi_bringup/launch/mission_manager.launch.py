@@ -190,13 +190,13 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'start_sonar',
-            default_value='true',
+            default_value='false',
             description='Start sonar_node.py.'
         ),
 
         DeclareLaunchArgument(
             'start_sonar_safety',
-            default_value='true',
+            default_value='false',
             description='Start sonar_safety_node.py.'
         ),
 
