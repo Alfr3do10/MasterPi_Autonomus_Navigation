@@ -96,8 +96,6 @@ class LineFollowerNode(Node):
 
         self.rois = [
             self._parse_roi(self.get_parameter('roi_1').value),
-            self._parse_roi(self.get_parameter('roi_2').value),
-            self._parse_roi(self.get_parameter('roi_3').value),
         ]
 
         self.base_speed = float(self.get_parameter('base_speed').value)
@@ -239,6 +237,9 @@ class LineFollowerNode(Node):
 
         if not self.enabled:
             self._reset_controller_state()
+
+            # Publish one immediate stop only when disabling.
+            # After this, image_callback will NOT keep publishing zeros.
             self.cmd_pub.publish(Twist())
 
     def _reset_controller_state(self):
@@ -597,7 +598,6 @@ class LineFollowerNode(Node):
 
         if not self.enabled:
             self._reset_controller_state()
-            twist = Twist()
 
             status_linear_x = 0.0
             status_angular_z = 0.0
@@ -612,6 +612,24 @@ class LineFollowerNode(Node):
                 (0, 165, 255),
                 2
             )
+
+            self._publish_status(
+                detected,
+                status_raw_center_x,
+                status_filtered_center_x,
+                status_error_norm,
+                status_linear_x,
+                status_angular_z,
+                total_area,
+                roi_areas,
+                status_filter,
+                status_total_weight
+            )
+
+            if self.publish_debug:
+                self._publish_debug_images(mask, debug, msg)
+
+            return
 
         self._publish_status(
             detected,
@@ -631,6 +649,12 @@ class LineFollowerNode(Node):
         if not self.publish_debug:
             return
 
+        self._publish_debug_images(mask, debug, msg)
+
+    def _publish_debug_images(self, mask, debug, source_msg):
+        if self.debug_pub is None or self.mask_pub is None:
+            return
+
         now_debug = self.get_clock().now().nanoseconds / 1e9
 
         if self.debug_publish_rate > 0.0 and self.last_debug_pub_time is not None:
@@ -642,11 +666,11 @@ class LineFollowerNode(Node):
         self.last_debug_pub_time = now_debug
 
         mask_msg = self.bridge.cv2_to_imgmsg(mask, encoding='mono8')
-        mask_msg.header = msg.header
+        mask_msg.header = source_msg.header
         self.mask_pub.publish(mask_msg)
 
         debug_msg = self.bridge.cv2_to_imgmsg(debug, encoding='bgr8')
-        debug_msg.header = msg.header
+        debug_msg.header = source_msg.header
         self.debug_pub.publish(debug_msg)
 
 

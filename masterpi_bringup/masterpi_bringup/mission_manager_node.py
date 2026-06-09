@@ -45,6 +45,7 @@ class MissionManagerNode(Node):
         self.declare_parameter('aruco_trigger_enabled', True)
         self.declare_parameter('aruco_detections_topic', '/aruco/detections')
         self.declare_parameter('valid_aruco_ids', [1, 3])
+        self.declare_parameter('log_aruco_detections', False)
         self.declare_parameter('aruco_trigger_max_distance_m', 1.20)
         self.declare_parameter('aruco_trigger_confirmations', 3)
         self.declare_parameter('aruco_detection_timeout_s', 0.60)
@@ -95,6 +96,7 @@ class MissionManagerNode(Node):
         self.aruco_trigger_enabled = self.get_bool('aruco_trigger_enabled')
         self.aruco_detections_topic = self.get_str('aruco_detections_topic')
         self.valid_aruco_ids = [int(x) for x in self.get_parameter('valid_aruco_ids').value]
+        self.log_aruco_detections = self.get_bool('log_aruco_detections')
         self.aruco_trigger_max_distance_m = self.get_float('aruco_trigger_max_distance_m')
         self.aruco_trigger_confirmations = self.get_int('aruco_trigger_confirmations')
         self.aruco_detection_timeout_s = self.get_float('aruco_detection_timeout_s')
@@ -163,6 +165,13 @@ class MissionManagerNode(Node):
         self.last_station_trigger_time = 0.0
         self.ignored_marker_until = {}
         self.station_state = StationState.SEGUIDOR_LINEA
+
+        # Diagnostics: track last cmd published by this node
+        self._last_cmd = {
+            'linear_x': 0.0,
+            'angular_z': 0.0,
+            'stamp': time.time(),
+        }
 
         self.lock = threading.Lock()
 
@@ -239,6 +248,19 @@ class MissionManagerNode(Node):
 
         with self.lock:
             self.latest_aruco_detection = best_detection
+
+        # Optional detailed logging to help validate yaw/distance interpretation
+        if self.log_aruco_detections:
+            try:
+                dets_str = []
+                for d in detections:
+                    dets_str.append(
+                        f"id={d['id']} yaw={d['yaw_error_deg']:.2f}° "
+                        f"dist={d['distance_m']:.3f} m err={d['distance_error_m']:.3f} m"
+                    )
+                self.get_logger().info(f"ArUco detections parsed: {', '.join(dets_str)}")
+            except Exception:
+                self.get_logger().info(f"ArUco detections parsed (raw): {detections}")
 
         self.maybe_request_aruco_station_trigger(best_detection, now)
 
@@ -653,6 +675,14 @@ class MissionManagerNode(Node):
         msg.angular.z = float(angular_z)
         self.cmd_pub.publish(msg)
 
+        # Update diagnostic last command record
+        try:
+            self._last_cmd['linear_x'] = float(linear_x)
+            self._last_cmd['angular_z'] = float(angular_z)
+            self._last_cmd['stamp'] = time.time()
+        except Exception:
+            pass
+
     def stop_robot(self, duration_s=0.0):
         self.get_logger().info(f'Stopping robot for {duration_s:.2f} s.')
 
@@ -680,9 +710,38 @@ class MissionManagerNode(Node):
 
         start_time = time.time()
         rate_period = 1.0 / max(1.0, self.command_rate_hz)
+        last_log_time = start_time
+        expected_angular = float(angular_z)
+
+        # Set a short flag in the state machine
+        with self.lock:
+            self.station_state = StationState.RETORNO
 
         while rclpy.ok() and time.time() - start_time < self.turn_duration_s:
+            # Publish intended turning command
             self.publish_cmd_vel(0.0, angular_z)
+
+            # Diagnostic: check if last command published by this node matches expected
+            try:
+                last = self._last_cmd
+                if abs(last.get('angular_z', 0.0) - expected_angular) > 1e-6:
+                    self.get_logger().warn(
+                        f'During turn_180 detected last_cmd.angular_z={last.get("angular_z"):.3f} ' 
+                        f'!= expected {expected_angular:.3f} (may be overwritten internally)'
+                    )
+            except Exception:
+                pass
+
+            # Periodic log to trace progress
+            now = time.time()
+            if now - last_log_time >= 1.0:
+                elapsed = now - start_time
+                remaining = max(0.0, self.turn_duration_s - elapsed)
+                self.get_logger().info(
+                    f'Turning... elapsed={elapsed:.2f}s remaining={remaining:.2f}s'
+                )
+                last_log_time = now
+
             time.sleep(rate_period)
 
         self.publish_cmd_vel(0.0, 0.0)

@@ -28,13 +28,13 @@ line_follower_node:
 
     # ROIs ajustadas a imagen 320x240.
     roi_1: [105.0, 130.0, 80.0, 240.0, 0.15]
-    roi_2: [145.0, 175.0, 80.0, 240.0, 0.30]
-    roi_3: [190.0, 235.0, 80.0, 240.0, 0.55]
+    # roi_2: [145.0, 175.0, 80.0, 240.0, 0.30]
+    # roi_3: [190.0, 235.0, 80.0, 240.0, 0.55]
 
-    base_speed: 0.10
+    base_speed: 0.13
 
-    kp_angular: 0.80
-    ki_angular: 0.00
+    kp_angular: 0.81
+    ki_angular: 0.002
     kd_angular: 0.05
 
     min_linear_speed: 0.13
