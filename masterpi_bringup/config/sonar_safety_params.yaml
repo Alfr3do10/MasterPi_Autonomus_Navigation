@@ -1,0 +1,28 @@
+sonar_safety_node:
+  ros__parameters:
+    sonar_range_topic: /sonar/range
+    line_follower_enabled_topic: /line_follower/enabled
+    cmd_vel_topic: /cmd_vel
+
+    # Se detiene si hay algo a menos de 10 cm.
+    stop_distance_m: 0.10
+
+    # No reanuda hasta que el obstáculo esté al menos a 15 cm.
+    # Esto evita que prenda/apague por ruido del sensor.
+    clear_distance_m: 0.15
+
+    # Confirmaciones para evitar falsos positivos.
+    obstacle_confirmations: 3
+    clear_confirmations: 5
+
+    # Pequeña espera antes de reactivar el seguidor.
+    resume_delay_s: 0.30
+
+    # Publica /cmd_vel = 0 mientras está detenido.
+    command_rate_hz: 20.0
+
+    log_period_s: 1.0
+
+    # Si el sonar manda inf, lo tomamos como camino libre.
+    assume_clear_on_inf: true
+    
