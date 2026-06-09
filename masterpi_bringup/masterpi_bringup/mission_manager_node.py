@@ -166,6 +166,13 @@ class MissionManagerNode(Node):
         self.ignored_marker_until = {}
         self.station_state = StationState.SEGUIDOR_LINEA
 
+        # Diagnostics: track last cmd published by this node
+        self._last_cmd = {
+            'linear_x': 0.0,
+            'angular_z': 0.0,
+            'stamp': time.time(),
+        }
+
         self.lock = threading.Lock()
 
         self.timer = self.create_timer(0.10, self.main_timer_callback)
@@ -668,6 +675,14 @@ class MissionManagerNode(Node):
         msg.angular.z = float(angular_z)
         self.cmd_pub.publish(msg)
 
+        # Update diagnostic last command record
+        try:
+            self._last_cmd['linear_x'] = float(linear_x)
+            self._last_cmd['angular_z'] = float(angular_z)
+            self._last_cmd['stamp'] = time.time()
+        except Exception:
+            pass
+
     def stop_robot(self, duration_s=0.0):
         self.get_logger().info(f'Stopping robot for {duration_s:.2f} s.')
 
@@ -695,9 +710,38 @@ class MissionManagerNode(Node):
 
         start_time = time.time()
         rate_period = 1.0 / max(1.0, self.command_rate_hz)
+        last_log_time = start_time
+        expected_angular = float(angular_z)
+
+        # Set a short flag in the state machine
+        with self.lock:
+            self.station_state = StationState.RETORNO
 
         while rclpy.ok() and time.time() - start_time < self.turn_duration_s:
+            # Publish intended turning command
             self.publish_cmd_vel(0.0, angular_z)
+
+            # Diagnostic: check if last command published by this node matches expected
+            try:
+                last = self._last_cmd
+                if abs(last.get('angular_z', 0.0) - expected_angular) > 1e-6:
+                    self.get_logger().warn(
+                        f'During turn_180 detected last_cmd.angular_z={last.get("angular_z"):.3f} ' 
+                        f'!= expected {expected_angular:.3f} (may be overwritten internally)'
+                    )
+            except Exception:
+                pass
+
+            # Periodic log to trace progress
+            now = time.time()
+            if now - last_log_time >= 1.0:
+                elapsed = now - start_time
+                remaining = max(0.0, self.turn_duration_s - elapsed)
+                self.get_logger().info(
+                    f'Turning... elapsed={elapsed:.2f}s remaining={remaining:.2f}s'
+                )
+                last_log_time = now
+
             time.sleep(rate_period)
 
         self.publish_cmd_vel(0.0, 0.0)
