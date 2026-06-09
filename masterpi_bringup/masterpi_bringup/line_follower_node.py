@@ -43,9 +43,10 @@ class LineFollowerNode(Node):
         self.declare_parameter('v_max', 255)
 
         # ROI format: [y1, y2, x1, x2, weight]
-        self.declare_parameter('roi_1', [105.0, 130.0, 80.0, 240.0, 0.15])
-        self.declare_parameter('roi_2', [145.0, 175.0, 80.0, 240.0, 0.30])
-        self.declare_parameter('roi_3', [190.0, 235.0, 80.0, 240.0, 0.55])
+        # Subida ligera de las ROI en Y para capturar línea más arriba.
+        self.declare_parameter('roi_1', [95.0, 120.0, 80.0, 240.0, 0.15])
+        self.declare_parameter('roi_2', [135.0, 165.0, 80.0, 240.0, 0.30])
+        self.declare_parameter('roi_3', [180.0, 225.0, 80.0, 240.0, 0.55])
 
         # Control parameters
         self.declare_parameter('base_speed', 0.15)
@@ -137,9 +138,9 @@ class LineFollowerNode(Node):
         self.debug_pub = None
         self.mask_pub = None
 
-        # if self.publish_debug:
-        #     self.debug_pub = self.create_publisher(Image, self.debug_image_topic, 10)
-        #     self.mask_pub = self.create_publisher(Image, self.mask_topic, 10)
+        if self.publish_debug:
+            self.debug_pub = self.create_publisher(Image, self.debug_image_topic, 10)
+            self.mask_pub = self.create_publisher(Image, self.mask_topic, 10)
 
         self.enabled_sub = self.create_subscription(
             Bool,
